@@ -272,7 +272,7 @@ def format_narrative(timeline_data: dict[str, Any]) -> str:
         for event in day["events"]:
             duration = f"{event['duration_minutes']}m" if event["duration_minutes"] > 0 else "instant"
             lines.append(f"  🕐 {event['time']} ({duration})")
-            lines.append(f"     {event['photo_count']} photos", end="")
+            lines.append(f"     {event['photo_count']} photos")
 
             if event["video_count"] > 0:
                 lines[-1] += f", {event['video_count']} videos"

@@ -42,6 +42,12 @@ Every script lives in `scripts/` and outputs **JSON** by default (for piping / A
 | `on_this_day.py` | Photos from today's date in prior years |
 | `album_auditor.py` | Find orphan photos, empty albums, album overlap |
 | `cleanup_executor.py` | Batch move junk to trash via AppleScript (with confirmation) |
+| `live_photo_analyzer.py` | Analyze Live Photos vs stills, find conversion candidates |
+| `shared_library.py` | Audit Shared Library vs personal: contributors, storage splits |
+| `icloud_status.py` | Check iCloud sync coverage: synced vs local-only items |
+| `similarity_finder.py` | Detect visually similar photos using quality feature vectors |
+| `seasonal_highlights.py` | Curate best photos per season with favorite boosting |
+| `face_quality.py` | Score face/portrait quality using Apple's ML face attributes |
 
 ### Examples
 
