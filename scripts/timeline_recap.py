@@ -89,6 +89,7 @@ def generate_timeline(
                     "total_photos": 0,
                     "total_days": 0,
                     "total_events": 0,
+                    "date_range": "Unknown",
                 },
             }
 
