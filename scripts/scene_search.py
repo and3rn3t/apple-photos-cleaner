@@ -8,7 +8,7 @@ import sys
 from collections import defaultdict
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, format_size, run_script
+from _common import PhotosDB, coredata_to_datetime, format_size, run_script, validate_year
 
 
 def search_scenes(
@@ -35,16 +35,21 @@ def search_scenes(
         cursor = conn.cursor()
 
         year_filter = ""
+        year_params: list = []
         if year:
-            year_filter = f"AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '{year}'"
+            year = validate_year(year)
+            year_filter = "AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?"
+            year_params = [year]
 
         if search_term:
-            return _search_by_scene(cursor, search_term, min_confidence, top_n, year_filter)
+            return _search_by_scene(cursor, search_term, min_confidence, top_n, year_filter, year_params)
         else:
-            return _generate_inventory(cursor, min_confidence, year_filter)
+            return _generate_inventory(cursor, min_confidence, year_filter, year_params)
 
 
-def _search_by_scene(cursor, search_term: str, min_confidence: float, top_n: int, year_filter: str) -> dict[str, Any]:
+def _search_by_scene(
+    cursor, search_term: str, min_confidence: float, top_n: int, year_filter: str, year_params: list
+) -> dict[str, Any]:
     """Search photos matching a specific scene classification."""
     query = f"""
         SELECT
@@ -70,7 +75,7 @@ def _search_by_scene(cursor, search_term: str, min_confidence: float, top_n: int
     """
 
     search_pattern = f"%{search_term.lower()}%"
-    cursor.execute(query, (search_pattern, min_confidence, top_n))
+    cursor.execute(query, (search_pattern, min_confidence, *year_params, top_n))
 
     results = []
     total_size = 0
@@ -105,7 +110,7 @@ def _search_by_scene(cursor, search_term: str, min_confidence: float, top_n: int
         AND (sc.ZCONFIDENCE >= ? OR sc.ZCONFIDENCE IS NULL)
         {year_filter}
     """
-    cursor.execute(count_query, (search_pattern, min_confidence))
+    cursor.execute(count_query, (search_pattern, min_confidence, *year_params))
     total_matches = cursor.fetchone()["total"]
 
     # Related scenes (other scenes that appear on the same photos)
@@ -145,7 +150,7 @@ def _search_by_scene(cursor, search_term: str, min_confidence: float, top_n: int
     }
 
 
-def _generate_inventory(cursor, min_confidence: float, year_filter: str) -> dict[str, Any]:
+def _generate_inventory(cursor, min_confidence: float, year_filter: str, year_params: list) -> dict[str, Any]:
     """Generate a complete content inventory by scene type."""
     query = f"""
         SELECT
@@ -161,7 +166,7 @@ def _generate_inventory(cursor, min_confidence: float, year_filter: str) -> dict
         GROUP BY sc.ZSCENENAME
         ORDER BY photo_count DESC
     """
-    cursor.execute(query, (min_confidence,))
+    cursor.execute(query, (min_confidence, *year_params))
 
     categories = defaultdict(list)
     all_scenes = []

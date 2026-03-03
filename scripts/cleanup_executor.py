@@ -10,7 +10,7 @@ import subprocess
 import sys
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, format_size, output_json
+from _common import PhotosDB, coredata_to_datetime, escape_applescript, format_size, output_json
 
 # Maximum items per AppleScript batch (Photos.app can be slow with large batches)
 MAX_BATCH_SIZE = 50
@@ -48,12 +48,15 @@ def get_cleanup_candidates(
             from _common import datetime_to_coredata
 
             where = "a.ZTRASHEDSTATE != 1 AND a.ZISDETECTEDSCREENSHOT = 1"
+            params: list[Any] = []
 
             if category == "old_screenshots":
                 cutoff = datetime.now() - timedelta(days=screenshot_age_days)
                 cutoff_ts = datetime_to_coredata(cutoff)
-                where += f" AND a.ZDATECREATED < {cutoff_ts}"
+                where += " AND a.ZDATECREATED < ?"
+                params.append(cutoff_ts)
 
+            params.append(limit)
             cursor.execute(
                 f"""
                 SELECT
@@ -65,7 +68,7 @@ def get_cleanup_candidates(
                 ORDER BY a.ZDATECREATED
                 LIMIT ?
             """,
-                (limit,),
+                params,
             )
 
             for row in cursor.fetchall():
@@ -203,8 +206,8 @@ def generate_trash_applescript(filenames: list[str]) -> str:
     Returns:
         AppleScript string
     """
-    # Build the filename matching list
-    filename_list = ", ".join(f'"{fn}"' for fn in filenames)
+    # Build the filename matching list with proper escaping
+    filename_list = ", ".join(f'"{escape_applescript(fn)}"' for fn in filenames)
 
     script = f"""
 set targetNames to {{{filename_list}}}

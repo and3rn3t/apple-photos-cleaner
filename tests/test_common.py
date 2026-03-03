@@ -11,6 +11,7 @@ import pytest
 from _common import (
     coredata_to_datetime,
     datetime_to_coredata,
+    escape_applescript,
     format_size,
     get_asset_kind_name,
     get_quality_score,
@@ -19,6 +20,8 @@ from _common import (
     is_hidden,
     is_screenshot,
     is_trashed,
+    sanitize_folder_name,
+    validate_year,
 )
 
 
@@ -368,6 +371,94 @@ class TestDatabaseQueries:
         assert result["total"] == 11500000
 
         conn.close()
+
+
+class TestValidateYear:
+    """Test year validation."""
+
+    def test_valid_year(self):
+        assert validate_year("2025") == "2025"
+
+    def test_valid_year_old(self):
+        assert validate_year("1999") == "1999"
+
+    def test_none_returns_none(self):
+        assert validate_year(None) is None
+
+    def test_rejects_non_digits(self):
+        with pytest.raises(ValueError, match="4-digit number"):
+            validate_year("abcd")
+
+    def test_rejects_sql_injection(self):
+        with pytest.raises(ValueError, match="4-digit number"):
+            validate_year("2025' OR '1'='1")
+
+    def test_rejects_short(self):
+        with pytest.raises(ValueError, match="4-digit number"):
+            validate_year("25")
+
+    def test_rejects_five_digits(self):
+        with pytest.raises(ValueError, match="4-digit number"):
+            validate_year("20250")
+
+
+class TestEscapeApplescript:
+    """Test AppleScript string escaping."""
+
+    def test_plain_string(self):
+        assert escape_applescript("hello") == "hello"
+
+    def test_escapes_quotes(self):
+        assert escape_applescript('say "hi"') == 'say \\"hi\\"'
+
+    def test_escapes_backslashes(self):
+        assert escape_applescript("path\\to\\file") == "path\\\\to\\\\file"
+
+    def test_backslash_before_quote(self):
+        # Critical: backslashes must be escaped BEFORE quotes
+        # Input: photo\"test.jpg  ->  photo\\"test.jpg
+        result = escape_applescript('photo\\"test.jpg')
+        assert result == 'photo\\\\\\"test.jpg'
+
+    def test_empty_string(self):
+        assert escape_applescript("") == ""
+
+
+class TestSanitizeFolderName:
+    """Test folder name sanitization."""
+
+    def test_plain_name(self):
+        assert sanitize_folder_name("Vacation 2025") == "Vacation 2025"
+
+    def test_strips_path_traversal(self):
+        result = sanitize_folder_name("../../etc/passwd")
+        assert "/" not in result
+        assert "\\" not in result
+        # Path separators removed — no traversal possible
+        assert not result.startswith(".")
+
+    def test_strips_leading_dot(self):
+        result = sanitize_folder_name(".hidden")
+        assert not result.startswith(".")
+        assert "hidden" in result
+
+    def test_replaces_slashes(self):
+        result = sanitize_folder_name("path/to/folder")
+        assert "/" not in result
+
+    def test_replaces_backslashes(self):
+        result = sanitize_folder_name("path\\to\\folder")
+        assert "\\" not in result
+
+    def test_empty_returns_unnamed(self):
+        assert sanitize_folder_name("") == "unnamed"
+
+    def test_dots_only_returns_unnamed(self):
+        assert sanitize_folder_name("...") == "unnamed"
+
+    def test_special_chars(self):
+        result = sanitize_folder_name('file<>:"|?*name')
+        assert all(c not in result for c in '<>:"|?*')
 
 
 if __name__ == "__main__":

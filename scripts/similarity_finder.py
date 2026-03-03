@@ -17,6 +17,7 @@ from _common import (
     coredata_to_datetime,
     format_size,
     run_script,
+    validate_year,
 )
 
 
@@ -93,8 +94,11 @@ def find_similar_photos(
             }
 
         where = ["a.ZTRASHEDSTATE != 1", "a.ZKIND = 0"]  # Photos only
+        params: list = []
         if year:
-            where.append(f"strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '{year}'")
+            year = validate_year(year)
+            where.append("strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?")
+            params.append(year)
 
         # Get photos with computed attributes
         query = f"""
@@ -108,9 +112,10 @@ def find_similar_photos(
             JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
             WHERE {" AND ".join(where)}
             ORDER BY a.ZDATECREATED DESC
-            LIMIT {limit}
+            LIMIT ?
         """
-        cursor.execute(query)
+        params.append(limit)
+        cursor.execute(query, params)
 
         photos = []
         for row in cursor.fetchall():

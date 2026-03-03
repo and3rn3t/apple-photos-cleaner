@@ -12,7 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, format_size
+from _common import PhotosDB, coredata_to_datetime, escape_applescript, format_size, sanitize_folder_name
 
 
 def generate_export_plan(
@@ -44,6 +44,7 @@ def generate_export_plan(
 
         # Build WHERE clauses
         where_clauses = ["a.ZTRASHEDSTATE != 1"]
+        params: list[Any] = []
 
         if favorites_only:
             where_clauses.append("a.ZFAVORITE = 1")
@@ -56,7 +57,8 @@ def generate_export_plan(
 
             dt = datetime.fromisoformat(start_date)
             timestamp = datetime_to_coredata(dt)
-            where_clauses.append(f"a.ZDATECREATED >= {timestamp}")
+            where_clauses.append("a.ZDATECREATED >= ?")
+            params.append(timestamp)
 
         if end_date:
             from datetime import datetime
@@ -65,7 +67,8 @@ def generate_export_plan(
 
             dt = datetime.fromisoformat(end_date)
             timestamp = datetime_to_coredata(dt)
-            where_clauses.append(f"a.ZDATECREATED <= {timestamp}")
+            where_clauses.append("a.ZDATECREATED <= ?")
+            params.append(timestamp)
 
         # Base query
         query = """
@@ -86,7 +89,8 @@ def generate_export_plan(
                 JOIN ZDETECTEDFACE df ON a.Z_PK = df.ZASSET
                 JOIN ZPERSON p ON df.ZPERSON = p.Z_PK
             """
-            where_clauses.append(f"p.ZFULLNAME = '{person_name}'")
+            where_clauses.append("p.ZFULLNAME = ?")
+            params.append(person_name)
 
         # Add album filter if specified
         if album_name:
@@ -94,12 +98,13 @@ def generate_export_plan(
                 JOIN Z_27ASSETS ga ON a.Z_PK = ga.Z_3ASSETS
                 JOIN ZGENERICALBUM album ON ga.Z_27ALBUMS = album.Z_PK
             """
-            where_clauses.append(f"album.ZTITLE = '{album_name}'")
+            where_clauses.append("album.ZTITLE = ?")
+            params.append(album_name)
 
         query += " WHERE " + " AND ".join(where_clauses)
         query += " ORDER BY a.ZDATECREATED"
 
-        cursor.execute(query)
+        cursor.execute(query, params)
 
         # Organize results
         organized = defaultdict(list)
@@ -192,21 +197,28 @@ def export_with_applescript(filenames: list[str], output_dir: str, folder_name: 
     Returns:
         True if successful
     """
-    # Create output directory
+    # Create output directory, with path traversal protection
     if folder_name:
-        export_path = os.path.join(output_dir, folder_name)
+        safe_folder = sanitize_folder_name(folder_name)
+        export_path = os.path.join(output_dir, safe_folder)
     else:
         export_path = output_dir
+
+    # Verify resolved path is inside output_dir
+    real_export = os.path.realpath(export_path)
+    real_output = os.path.realpath(output_dir)
+    if not real_export.startswith(real_output):
+        raise ValueError(f"Path traversal detected in folder name: {folder_name!r}")
 
     Path(export_path).mkdir(parents=True, exist_ok=True)
 
     # Build AppleScript that searches by filename, then exports matches.
     # Photos.app doesn't expose Z_PK, so we match by filename (same
     # pattern used in cleanup_executor.py for delete).
-    escaped_path = export_path.replace('"', '\\"')
+    escaped_path = escape_applescript(export_path)
     file_match_blocks = []
     for fn in filenames:
-        escaped = fn.replace('"', '\\"').replace("\\", "\\\\")
+        escaped = escape_applescript(fn)
         file_match_blocks.append(
             f'        set targetName to "{escaped}"\n'
             f"        set matchedItems to (search for targetName)\n"

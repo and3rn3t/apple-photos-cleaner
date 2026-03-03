@@ -134,8 +134,10 @@ def analyze_face_quality(
             "p.ZFULLNAME IS NOT NULL",
             "p.ZFULLNAME != ''",
         ]
+        params: list[Any] = []
         if person_name:
-            where.append(f"p.ZFULLNAME LIKE '%{person_name}%'")
+            where.append("p.ZFULLNAME LIKE ?")
+            params.append(f"%{person_name}%")
 
         query = f"""
             SELECT {", ".join(select_cols)}
@@ -146,7 +148,7 @@ def analyze_face_quality(
             WHERE {" AND ".join(where)}
             ORDER BY p.ZFULLNAME, df.ZQUALITYMEASURE DESC
         """
-        cursor.execute(query)
+        cursor.execute(query, params)
 
         # Group by person
         people_data: dict[str, dict] = {}

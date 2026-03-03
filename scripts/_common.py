@@ -7,6 +7,7 @@ All scripts use this module for consistent database access and data formatting.
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 import traceback
@@ -62,9 +63,9 @@ def connect_db(db_path: str) -> sqlite3.Connection:
     Returns:
         SQLite connection
     """
-    # Use read-only mode with URI
+    # Use read-only mode with URI; busy_timeout retries if Photos.app holds a lock
     uri = f"file:{db_path}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True)
+    conn = sqlite3.connect(uri, uri=True, timeout=5)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -335,6 +336,52 @@ def build_asset_query(
         query += f"\nLIMIT {limit}"
 
     return query
+
+
+# ── Security helpers ─────────────────────────────────────────────────────────
+
+
+def validate_year(year: Optional[str]) -> Optional[str]:
+    """Validate that a year string is a 4-digit number.
+
+    Args:
+        year: Year string from CLI argument
+
+    Returns:
+        The validated year string, or None if input was None
+
+    Raises:
+        ValueError: If year is not a 4-digit number
+    """
+    if year is None:
+        return None
+    if not re.match(r"^\d{4}$", year):
+        raise ValueError(f"Year must be a 4-digit number, got: {year!r}")
+    return year
+
+
+def escape_applescript(s: str) -> str:
+    """Escape a string for use inside AppleScript double-quotes.
+
+    Handles backslashes first, then double-quotes, to avoid
+    double-escaping.
+    """
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def sanitize_folder_name(name: str) -> str:
+    """Sanitize a string for safe use as a folder/file name.
+
+    Strips path separators, dotfile prefixes, and other unsafe characters
+    to prevent path-traversal attacks.
+    """
+    # Replace path separators and other unsafe chars with underscore
+    safe = re.sub(r'[/\\:"<>|?*]', "_", name)
+    # Remove dots (prevent hidden dirs and .. traversal)
+    safe = re.sub(r"\.+", "_", safe)
+    # Collapse runs of underscores and strip leading/trailing underscores
+    safe = re.sub(r"_+", "_", safe).strip("_")
+    return safe or "unnamed"
 
 
 # ── Safe column / value helpers ──────────────────────────────────────────────

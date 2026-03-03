@@ -9,7 +9,7 @@ import sys
 from collections import defaultdict
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, format_size, run_script
+from _common import PhotosDB, coredata_to_datetime, format_size, run_script, validate_year
 
 # ---------------------------------------------------------------------------
 # Offline reverse geocoding: maps lat/lon to approximate place names using
@@ -232,9 +232,12 @@ def analyze_locations(
             "a.ZLATITUDE != 0",
             "a.ZLONGITUDE != 0",
         ]
+        params: list = []
 
         if year:
-            where_clauses.append(f"strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '{year}'")
+            year = validate_year(year)
+            where_clauses.append("strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?")
+            params.append(year)
 
         query = f"""
             SELECT
@@ -252,7 +255,7 @@ def analyze_locations(
             ORDER BY a.ZDATECREATED
         """
 
-        cursor.execute(query)
+        cursor.execute(query, params)
 
         photos_with_location = []
         total_assets = 0
