@@ -7,19 +7,17 @@ Time-of-day patterns, busiest days, seasonal trends, photo vs video ratios.
 import argparse
 import sys
 from collections import defaultdict
-from typing import Dict, List, Any, Optional
+from typing import Any, Optional
 
-from _common import (
-    PhotosDB, output_json, format_size, coredata_to_datetime
-)
+from _common import PhotosDB, coredata_to_datetime, format_size, output_json
 
-DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 def analyze_habits(
     db_path: Optional[str] = None,
     year: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Analyze photo-taking habits and patterns.
 
@@ -57,9 +55,9 @@ def analyze_habits(
         by_hour = defaultdict(int)
         by_day_of_week = defaultdict(int)
         by_month = defaultdict(int)
-        by_year_month = defaultdict(lambda: {'photos': 0, 'videos': 0, 'screenshots': 0, 'size': 0, 'favorites': 0})
-        by_year = defaultdict(lambda: {'photos': 0, 'videos': 0, 'total': 0, 'size': 0})
-        streaks = {'current': 0, 'max': 0, 'max_start': None, 'max_end': None}
+        by_year_month = defaultdict(lambda: {"photos": 0, "videos": 0, "screenshots": 0, "size": 0, "favorites": 0})
+        by_year = defaultdict(lambda: {"photos": 0, "videos": 0, "total": 0, "size": 0})
+        streaks = {"current": 0, "max": 0, "max_start": None, "max_end": None}
         daily_counts = defaultdict(int)
 
         total_photos = 0
@@ -71,7 +69,7 @@ def analyze_habits(
         last_date = None
 
         for row in cursor.fetchall():
-            dt = coredata_to_datetime(row['ZDATECREATED'])
+            dt = coredata_to_datetime(row["ZDATECREATED"])
             if dt is None:
                 continue
 
@@ -79,11 +77,10 @@ def analyze_habits(
                 first_date = dt
             last_date = dt
 
-            is_photo = row['ZKIND'] == 0
-            is_video = row['ZKIND'] == 1
-            is_screenshot = bool(row['ZISDETECTEDSCREENSHOT'])
-            is_fav = bool(row['ZFAVORITE'])
-            size = row['ZORIGINALFILESIZE'] or 0
+            is_video = row["ZKIND"] == 1
+            is_screenshot = bool(row["ZISDETECTEDSCREENSHOT"])
+            is_fav = bool(row["ZFAVORITE"])
+            size = row["ZORIGINALFILESIZE"] or 0
 
             total_size += size
             if is_fav:
@@ -106,33 +103,34 @@ def analyze_habits(
             by_month[dt.month] += 1
 
             # Year-month
-            ym = dt.strftime('%Y-%m')
+            ym = dt.strftime("%Y-%m")
             if is_video:
-                by_year_month[ym]['videos'] += 1
+                by_year_month[ym]["videos"] += 1
             elif is_screenshot:
-                by_year_month[ym]['screenshots'] += 1
+                by_year_month[ym]["screenshots"] += 1
             else:
-                by_year_month[ym]['photos'] += 1
-            by_year_month[ym]['size'] += size
+                by_year_month[ym]["photos"] += 1
+            by_year_month[ym]["size"] += size
             if is_fav:
-                by_year_month[ym]['favorites'] += 1
+                by_year_month[ym]["favorites"] += 1
 
             # Year
             y = str(dt.year)
             if is_video:
-                by_year[y]['videos'] += 1
+                by_year[y]["videos"] += 1
             else:
-                by_year[y]['photos'] += 1
-            by_year[y]['total'] += 1
-            by_year[y]['size'] += size
+                by_year[y]["photos"] += 1
+            by_year[y]["total"] += 1
+            by_year[y]["size"] += size
 
             # Daily counts for streak tracking
-            day_key = dt.strftime('%Y-%m-%d')
+            day_key = dt.strftime("%Y-%m-%d")
             daily_counts[day_key] += 1
 
         # Calculate streaks
         if daily_counts:
-            from datetime import timedelta, date
+            from datetime import date
+
             all_days = sorted(daily_counts.keys())
             current_streak = 1
             max_streak = 1
@@ -161,10 +159,10 @@ def analyze_habits(
                 max_streak_end = all_days[-1]
 
             streaks = {
-                'max_days': max_streak,
-                'max_start': max_streak_start,
-                'max_end': max_streak_end,
-                'total_active_days': len(daily_counts),
+                "max_days": max_streak,
+                "max_start": max_streak_start,
+                "max_end": max_streak_end,
+                "total_active_days": len(daily_counts),
             }
 
         # Busiest single day
@@ -179,68 +177,77 @@ def analyze_habits(
         peak_hour = max(by_hour.items(), key=lambda x: x[1])[0] if by_hour else 0
         for h in range(24):
             count = by_hour.get(h, 0)
-            hour_data.append({
-                'hour': h,
-                'label': f"{h:02d}:00",
-                'count': count,
-                'is_peak': h == peak_hour,
-            })
+            hour_data.append(
+                {
+                    "hour": h,
+                    "label": f"{h:02d}:00",
+                    "count": count,
+                    "is_peak": h == peak_hour,
+                }
+            )
 
         # Format day-of-week data
         dow_data = []
         peak_dow = max(by_day_of_week.items(), key=lambda x: x[1])[0] if by_day_of_week else 0
         for d in range(7):
             count = by_day_of_week.get(d, 0)
-            dow_data.append({
-                'day': d,
-                'name': DAY_NAMES[d],
-                'count': count,
-                'is_peak': d == peak_dow,
-            })
+            dow_data.append(
+                {
+                    "day": d,
+                    "name": DAY_NAMES[d],
+                    "count": count,
+                    "is_peak": d == peak_dow,
+                }
+            )
 
         # Format month data
-        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         month_data = []
         peak_month = max(by_month.items(), key=lambda x: x[1])[0] if by_month else 1
         for m in range(1, 13):
             count = by_month.get(m, 0)
-            month_data.append({
-                'month': m,
-                'name': month_names[m - 1],
-                'count': count,
-                'is_peak': m == peak_month,
-            })
+            month_data.append(
+                {
+                    "month": m,
+                    "name": month_names[m - 1],
+                    "count": count,
+                    "is_peak": m == peak_month,
+                }
+            )
 
         # Monthly trend
         monthly_trend = []
         for ym in sorted(by_year_month.keys()):
             data = by_year_month[ym]
-            monthly_trend.append({
-                'period': ym,
-                'photos': data['photos'],
-                'videos': data['videos'],
-                'screenshots': data['screenshots'],
-                'total': data['photos'] + data['videos'] + data['screenshots'],
-                'size': data['size'],
-                'size_formatted': format_size(data['size']),
-                'favorites': data['favorites'],
-            })
+            monthly_trend.append(
+                {
+                    "period": ym,
+                    "photos": data["photos"],
+                    "videos": data["videos"],
+                    "screenshots": data["screenshots"],
+                    "total": data["photos"] + data["videos"] + data["screenshots"],
+                    "size": data["size"],
+                    "size_formatted": format_size(data["size"]),
+                    "favorites": data["favorites"],
+                }
+            )
 
         # Year trends
         yearly_trend = []
         for y in sorted(by_year.keys()):
             data = by_year[y]
-            ratio = round(data['videos'] / data['photos'] * 100, 1) if data['photos'] else 0
-            yearly_trend.append({
-                'year': y,
-                'photos': data['photos'],
-                'videos': data['videos'],
-                'total': data['total'],
-                'size': data['size'],
-                'size_formatted': format_size(data['size']),
-                'video_ratio': ratio,
-            })
+            ratio = round(data["videos"] / data["photos"] * 100, 1) if data["photos"] else 0
+            yearly_trend.append(
+                {
+                    "year": y,
+                    "photos": data["photos"],
+                    "videos": data["videos"],
+                    "total": data["total"],
+                    "size": data["size"],
+                    "size_formatted": format_size(data["size"]),
+                    "video_ratio": ratio,
+                }
+            )
 
         # Time of day categories
         morning = sum(by_hour.get(h, 0) for h in range(6, 12))
@@ -249,49 +256,51 @@ def analyze_habits(
         night = sum(by_hour.get(h, 0) for h in range(0, 6))
 
         return {
-            'by_hour': hour_data,
-            'by_day_of_week': dow_data,
-            'by_month': month_data,
-            'monthly_trend': monthly_trend,
-            'yearly_trend': yearly_trend,
-            'time_of_day': {
-                'morning': {'label': 'Morning (6am-12pm)', 'count': morning},
-                'afternoon': {'label': 'Afternoon (12pm-6pm)', 'count': afternoon},
-                'evening': {'label': 'Evening (6pm-12am)', 'count': evening},
-                'night': {'label': 'Night (12am-6am)', 'count': night},
+            "by_hour": hour_data,
+            "by_day_of_week": dow_data,
+            "by_month": month_data,
+            "monthly_trend": monthly_trend,
+            "yearly_trend": yearly_trend,
+            "time_of_day": {
+                "morning": {"label": "Morning (6am-12pm)", "count": morning},
+                "afternoon": {"label": "Afternoon (12pm-6pm)", "count": afternoon},
+                "evening": {"label": "Evening (6pm-12am)", "count": evening},
+                "night": {"label": "Night (12am-6am)", "count": night},
             },
-            'streaks': streaks,
-            'summary': {
-                'total_photos': total_photos,
-                'total_videos': total_videos,
-                'total_screenshots': total_screenshots,
-                'total_favorites': total_favorites,
-                'total_size': total_size,
-                'total_size_formatted': format_size(total_size),
-                'first_date': first_date.isoformat() if first_date else None,
-                'last_date': last_date.isoformat() if last_date else None,
-                'busiest_day': busiest_day[0],
-                'busiest_day_count': busiest_day[1],
-                'avg_per_active_day': round(avg_per_active_day, 1),
-                'peak_hour': f"{peak_hour:02d}:00" if by_hour else None,
-                'peak_day': DAY_NAMES[peak_dow] if by_day_of_week else None,
-                'peak_month': month_names[peak_month - 1] if by_month else None,
+            "streaks": streaks,
+            "summary": {
+                "total_photos": total_photos,
+                "total_videos": total_videos,
+                "total_screenshots": total_screenshots,
+                "total_favorites": total_favorites,
+                "total_size": total_size,
+                "total_size_formatted": format_size(total_size),
+                "first_date": first_date.isoformat() if first_date else None,
+                "last_date": last_date.isoformat() if last_date else None,
+                "busiest_day": busiest_day[0],
+                "busiest_day_count": busiest_day[1],
+                "avg_per_active_day": round(avg_per_active_day, 1),
+                "peak_hour": f"{peak_hour:02d}:00" if by_hour else None,
+                "peak_day": DAY_NAMES[peak_dow] if by_day_of_week else None,
+                "peak_month": month_names[peak_month - 1] if by_month else None,
             },
         }
 
 
-def format_summary(data: Dict[str, Any]) -> str:
+def format_summary(data: dict[str, Any]) -> str:
     """Format habits analysis as human-readable summary."""
     lines = []
     lines.append("📊 PHOTO HABITS & INSIGHTS")
     lines.append("=" * 50)
     lines.append("")
 
-    s = data['summary']
-    lines.append(f"Total: {s['total_photos']:,} photos, {s['total_videos']:,} videos, {s['total_screenshots']:,} screenshots")
+    s = data["summary"]
+    lines.append(
+        f"Total: {s['total_photos']:,} photos, {s['total_videos']:,} videos, {s['total_screenshots']:,} screenshots"
+    )
     lines.append(f"Favorites: {s['total_favorites']:,}")
     lines.append(f"Storage: {s['total_size_formatted']}")
-    if s['first_date'] and s['last_date']:
+    if s["first_date"] and s["last_date"]:
         lines.append(f"Period: {s['first_date'][:10]} → {s['last_date'][:10]}")
     lines.append(f"Average per active day: {s['avg_per_active_day']}")
     lines.append("")
@@ -302,38 +311,40 @@ def format_summary(data: Dict[str, Any]) -> str:
     lines.append(f"  Peak month: {s['peak_month']}")
     lines.append("")
 
-    tod = data['time_of_day']
-    total = sum(v['count'] for v in tod.values()) or 1
+    tod = data["time_of_day"]
+    total = sum(v["count"] for v in tod.values()) or 1
     lines.append("  Time of Day:")
-    for period in ['morning', 'afternoon', 'evening', 'night']:
+    for period in ["morning", "afternoon", "evening", "night"]:
         d = tod[period]
-        pct = round(d['count'] / total * 100, 1)
+        pct = round(d["count"] / total * 100, 1)
         bar = "█" * int(pct / 3)
         lines.append(f"    {d['label']}: {d['count']:,} ({pct}%) {bar}")
     lines.append("")
 
     lines.append("  Day of Week:")
-    for day in data['by_day_of_week']:
-        peak = " ← peak" if day['is_peak'] else ""
-        bar = "█" * int(day['count'] / max(d['count'] for d in data['by_day_of_week']) * 20) if day['count'] else ""
+    for day in data["by_day_of_week"]:
+        peak = " ← peak" if day["is_peak"] else ""
+        bar = "█" * int(day["count"] / max(d["count"] for d in data["by_day_of_week"]) * 20) if day["count"] else ""
         lines.append(f"    {day['name']:>9}: {day['count']:>6,} {bar}{peak}")
     lines.append("")
 
-    if data['streaks'].get('max_days'):
-        st = data['streaks']
-        lines.append(f"🔥 Streaks:")
+    if data["streaks"].get("max_days"):
+        st = data["streaks"]
+        lines.append("🔥 Streaks:")
         lines.append(f"  Longest streak: {st['max_days']} consecutive days")
         lines.append(f"    ({st['max_start']} → {st['max_end']})")
         lines.append(f"  Total active days: {st['total_active_days']:,}")
         lines.append("")
 
-    if data['summary']['busiest_day']:
+    if data["summary"]["busiest_day"]:
         lines.append(f"📸 Busiest day: {s['busiest_day']} ({s['busiest_day_count']:,} items)")
         lines.append("")
 
     lines.append("📈 Year Trends:")
-    for yt in data['yearly_trend']:
-        lines.append(f"  {yt['year']}: {yt['total']:,} items ({yt['size_formatted']}) | video ratio: {yt['video_ratio']}%")
+    for yt in data["yearly_trend"]:
+        lines.append(
+            f"  {yt['year']}: {yt['total']:,} items ({yt['size_formatted']}) | video ratio: {yt['video_ratio']}%"
+        )
     lines.append("")
 
     return "\n".join(lines)
@@ -341,21 +352,20 @@ def format_summary(data: Dict[str, Any]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Analyze photo-taking habits and patterns',
+        description="Analyze photo-taking habits and patterns",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s --human
   %(prog)s --year 2025 --human
   %(prog)s --output habits.json
-        """
+        """,
     )
-    parser.add_argument('--db-path', help='Path to Photos.sqlite database')
-    parser.add_argument('--library', help='Path to Photos library')
-    parser.add_argument('--year', help='Filter to specific year (YYYY)')
-    parser.add_argument('-o', '--output', help='Output JSON file')
-    parser.add_argument('--human', action='store_true',
-                        help='Output human-readable summary')
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument("--year", help="Filter to specific year (YYYY)")
+    parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
 
@@ -381,9 +391,10 @@ Examples:
     except Exception as e:
         print(f"Error analyzing habits: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

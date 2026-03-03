@@ -7,11 +7,9 @@ Search by content type (beach, sunset, dog, food), generate content inventory.
 import argparse
 import sys
 from collections import defaultdict
-from typing import Dict, List, Any, Optional
+from typing import Any, Optional
 
-from _common import (
-    PhotosDB, output_json, format_size, coredata_to_datetime
-)
+from _common import PhotosDB, coredata_to_datetime, format_size, output_json
 
 
 def search_scenes(
@@ -20,7 +18,7 @@ def search_scenes(
     min_confidence: float = 0.0,
     top_n: int = 50,
     year: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Search photos by scene classification or generate content inventory.
 
@@ -47,9 +45,7 @@ def search_scenes(
             return _generate_inventory(cursor, min_confidence, year_filter)
 
 
-def _search_by_scene(
-    cursor, search_term: str, min_confidence: float, top_n: int, year_filter: str
-) -> Dict[str, Any]:
+def _search_by_scene(cursor, search_term: str, min_confidence: float, top_n: int, year_filter: str) -> dict[str, Any]:
     """Search photos matching a specific scene classification."""
     query = f"""
         SELECT
@@ -74,29 +70,31 @@ def _search_by_scene(
         LIMIT ?
     """
 
-    search_pattern = f'%{search_term.lower()}%'
+    search_pattern = f"%{search_term.lower()}%"
     cursor.execute(query, (search_pattern, min_confidence, top_n))
 
     results = []
     total_size = 0
     for row in cursor.fetchall():
-        created = coredata_to_datetime(row['ZDATECREATED'])
-        size = row['ZORIGINALFILESIZE'] or 0
+        created = coredata_to_datetime(row["ZDATECREATED"])
+        size = row["ZORIGINALFILESIZE"] or 0
         total_size += size
 
-        results.append({
-            'id': row['Z_PK'],
-            'filename': row['ZFILENAME'],
-            'created': created.isoformat() if created else None,
-            'kind': 'photo' if row['ZKIND'] == 0 else 'video',
-            'is_favorite': bool(row['ZFAVORITE']),
-            'size': size,
-            'size_formatted': format_size(size),
-            'scene': row['ZSCENENAME'],
-            'confidence': round(row['ZCONFIDENCE'], 3) if row['ZCONFIDENCE'] else None,
-            'latitude': row['ZLATITUDE'],
-            'longitude': row['ZLONGITUDE'],
-        })
+        results.append(
+            {
+                "id": row["Z_PK"],
+                "filename": row["ZFILENAME"],
+                "created": created.isoformat() if created else None,
+                "kind": "photo" if row["ZKIND"] == 0 else "video",
+                "is_favorite": bool(row["ZFAVORITE"]),
+                "size": size,
+                "size_formatted": format_size(size),
+                "scene": row["ZSCENENAME"],
+                "confidence": round(row["ZCONFIDENCE"], 3) if row["ZCONFIDENCE"] else None,
+                "latitude": row["ZLATITUDE"],
+                "longitude": row["ZLONGITUDE"],
+            }
+        )
 
     # Get total count (not limited)
     count_query = f"""
@@ -109,13 +107,14 @@ def _search_by_scene(
         {year_filter}
     """
     cursor.execute(count_query, (search_pattern, min_confidence))
-    total_matches = cursor.fetchone()['total']
+    total_matches = cursor.fetchone()["total"]
 
     # Related scenes (other scenes that appear on the same photos)
     if results:
-        photo_ids = [r['id'] for r in results[:100]]
-        placeholders = ','.join('?' * len(photo_ids))
-        cursor.execute(f"""
+        photo_ids = [r["id"] for r in results[:100]]
+        placeholders = ",".join("?" * len(photo_ids))
+        cursor.execute(
+            f"""
             SELECT sc.ZSCENENAME, COUNT(DISTINCT sc.ZASSET) as count
             FROM ZSCENECLASSIFICATION sc
             WHERE sc.ZASSET IN ({placeholders})
@@ -123,30 +122,31 @@ def _search_by_scene(
             GROUP BY sc.ZSCENENAME
             ORDER BY count DESC
             LIMIT 10
-        """, photo_ids + [search_pattern])
+        """,
+            [*photo_ids, search_pattern],
+        )
         related_scenes = [
-            {'scene': row['ZSCENENAME'], 'count': row['count']}
-            for row in cursor.fetchall() if row['ZSCENENAME']
+            {"scene": row["ZSCENENAME"], "count": row["count"]} for row in cursor.fetchall() if row["ZSCENENAME"]
         ]
     else:
         related_scenes = []
 
     return {
-        'mode': 'search',
-        'search_term': search_term,
-        'results': results,
-        'related_scenes': related_scenes,
-        'summary': {
-            'total_matches': total_matches,
-            'shown': len(results),
-            'total_size': total_size,
-            'total_size_formatted': format_size(total_size),
-            'min_confidence': min_confidence,
+        "mode": "search",
+        "search_term": search_term,
+        "results": results,
+        "related_scenes": related_scenes,
+        "summary": {
+            "total_matches": total_matches,
+            "shown": len(results),
+            "total_size": total_size,
+            "total_size_formatted": format_size(total_size),
+            "min_confidence": min_confidence,
         },
     }
 
 
-def _generate_inventory(cursor, min_confidence: float, year_filter: str) -> Dict[str, Any]:
+def _generate_inventory(cursor, min_confidence: float, year_filter: str) -> dict[str, Any]:
     """Generate a complete content inventory by scene type."""
     query = f"""
         SELECT
@@ -168,93 +168,123 @@ def _generate_inventory(cursor, min_confidence: float, year_filter: str) -> Dict
     all_scenes = []
 
     for row in cursor.fetchall():
-        scene = row['ZSCENENAME']
-        count = row['photo_count']
-        avg_conf = row['avg_confidence']
+        scene = row["ZSCENENAME"]
+        count = row["photo_count"]
+        avg_conf = row["avg_confidence"]
 
         scene_data = {
-            'scene': scene,
-            'photo_count': count,
-            'avg_confidence': round(avg_conf, 3) if avg_conf else None,
+            "scene": scene,
+            "photo_count": count,
+            "avg_confidence": round(avg_conf, 3) if avg_conf else None,
         }
         all_scenes.append(scene_data)
 
         # Categorize scenes
-        scene_lower = scene.lower() if scene else ''
-        if any(w in scene_lower for w in ['dog', 'cat', 'bird', 'fish', 'animal', 'pet', 'horse']):
-            categories['animals'].append(scene_data)
-        elif any(w in scene_lower for w in ['food', 'meal', 'dinner', 'lunch', 'breakfast', 'dessert', 'cake', 'pizza', 'coffee']):
-            categories['food_drink'].append(scene_data)
-        elif any(w in scene_lower for w in ['beach', 'ocean', 'mountain', 'lake', 'forest', 'park', 'garden', 'sunset', 'sunrise', 'sky', 'snow', 'field', 'river', 'waterfall']):
-            categories['nature_outdoor'].append(scene_data)
-        elif any(w in scene_lower for w in ['sport', 'swim', 'run', 'ball', 'game', 'gym', 'fitness', 'soccer', 'basketball', 'baseball']):
-            categories['sports'].append(scene_data)
-        elif any(w in scene_lower for w in ['car', 'road', 'street', 'building', 'house', 'city', 'bridge', 'train', 'airplane', 'boat']):
-            categories['urban_travel'].append(scene_data)
-        elif any(w in scene_lower for w in ['face', 'selfie', 'portrait', 'people', 'group', 'family', 'baby', 'child', 'wedding']):
-            categories['people'].append(scene_data)
+        scene_lower = scene.lower() if scene else ""
+        if any(w in scene_lower for w in ["dog", "cat", "bird", "fish", "animal", "pet", "horse"]):
+            categories["animals"].append(scene_data)
+        elif any(
+            w in scene_lower
+            for w in ["food", "meal", "dinner", "lunch", "breakfast", "dessert", "cake", "pizza", "coffee"]
+        ):
+            categories["food_drink"].append(scene_data)
+        elif any(
+            w in scene_lower
+            for w in [
+                "beach",
+                "ocean",
+                "mountain",
+                "lake",
+                "forest",
+                "park",
+                "garden",
+                "sunset",
+                "sunrise",
+                "sky",
+                "snow",
+                "field",
+                "river",
+                "waterfall",
+            ]
+        ):
+            categories["nature_outdoor"].append(scene_data)
+        elif any(
+            w in scene_lower
+            for w in ["sport", "swim", "run", "ball", "game", "gym", "fitness", "soccer", "basketball", "baseball"]
+        ):
+            categories["sports"].append(scene_data)
+        elif any(
+            w in scene_lower
+            for w in ["car", "road", "street", "building", "house", "city", "bridge", "train", "airplane", "boat"]
+        ):
+            categories["urban_travel"].append(scene_data)
+        elif any(
+            w in scene_lower
+            for w in ["face", "selfie", "portrait", "people", "group", "family", "baby", "child", "wedding"]
+        ):
+            categories["people"].append(scene_data)
         else:
-            categories['other'].append(scene_data)
+            categories["other"].append(scene_data)
 
     # Summary stats
-    total_tagged = sum(s['photo_count'] for s in all_scenes)
+    total_tagged = sum(s["photo_count"] for s in all_scenes)
 
     cursor.execute("""
         SELECT COUNT(*) as total FROM ZASSET WHERE ZTRASHEDSTATE != 1
     """)
-    total_all = cursor.fetchone()['total']
+    total_all = cursor.fetchone()["total"]
 
     return {
-        'mode': 'inventory',
-        'scenes': all_scenes,
-        'categories': {k: v for k, v in sorted(categories.items())},
-        'summary': {
-            'total_scenes': len(all_scenes),
-            'total_tagged_photos': total_tagged,
-            'total_photos': total_all,
-            'coverage': round(total_tagged / total_all * 100, 1) if total_all else 0,
-            'min_confidence': min_confidence,
+        "mode": "inventory",
+        "scenes": all_scenes,
+        "categories": {k: v for k, v in sorted(categories.items())},
+        "summary": {
+            "total_scenes": len(all_scenes),
+            "total_tagged_photos": total_tagged,
+            "total_photos": total_all,
+            "coverage": round(total_tagged / total_all * 100, 1) if total_all else 0,
+            "min_confidence": min_confidence,
         },
     }
 
 
-def format_summary(data: Dict[str, Any]) -> str:
+def format_summary(data: dict[str, Any]) -> str:
     """Format scene search/inventory as human-readable summary."""
     lines = []
     lines.append("🏷️  SCENE / CONTENT SEARCH")
     lines.append("=" * 50)
     lines.append("")
 
-    if data['mode'] == 'search':
-        summary = data['summary']
-        lines.append(f"Search: \"{data['search_term']}\"")
+    if data["mode"] == "search":
+        summary = data["summary"]
+        lines.append(f'Search: "{data["search_term"]}"')
         lines.append(f"Matches: {summary['total_matches']:,} (showing {summary['shown']})")
         lines.append(f"Total size: {summary['total_size_formatted']}")
         lines.append("")
 
         lines.append("Results:")
-        for r in data['results'][:20]:
-            fav = " ★" if r['is_favorite'] else ""
-            conf = f" ({r['confidence']:.2f})" if r['confidence'] else ""
+        for r in data["results"][:20]:
+            fav = " ★" if r["is_favorite"] else ""
+            conf = f" ({r['confidence']:.2f})" if r["confidence"] else ""
             lines.append(f"  {r['filename']} | {r['scene']}{conf}{fav}")
 
-        if data['related_scenes']:
+        if data["related_scenes"]:
             lines.append("")
             lines.append("Related scenes:")
-            for rs in data['related_scenes']:
+            for rs in data["related_scenes"]:
                 lines.append(f"  {rs['scene']}: {rs['count']} photos")
 
     else:  # inventory
-        summary = data['summary']
+        summary = data["summary"]
         lines.append(f"Unique scene labels: {summary['total_scenes']:,}")
         lines.append(f"Scene-tagged entries: {summary['total_tagged_photos']:,}")
         lines.append(f"Library total: {summary['total_photos']:,}")
         lines.append("")
 
-        if data['categories']:
+        if data["categories"]:
             lines.append("By Category:")
-            for cat_name, scenes in sorted(data['categories'].items()):
-                cat_total = sum(s['photo_count'] for s in scenes)
+            for cat_name, scenes in sorted(data["categories"].items()):
+                cat_total = sum(s["photo_count"] for s in scenes)
                 lines.append(f"\n  📂 {cat_name.replace('_', ' ').title()} ({cat_total:,} photos)")
                 for scene in scenes[:8]:
                     lines.append(f"    {scene['scene']}: {scene['photo_count']:,}")
@@ -263,7 +293,7 @@ def format_summary(data: Dict[str, Any]) -> str:
 
         lines.append("")
         lines.append("Top 20 Scene Labels:")
-        for scene in data['scenes'][:20]:
+        for scene in data["scenes"][:20]:
             lines.append(f"  {scene['scene']}: {scene['photo_count']:,}")
 
     lines.append("")
@@ -272,7 +302,7 @@ def format_summary(data: Dict[str, Any]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Search photos by scene/content or generate content inventory',
+        description="Search photos by scene/content or generate content inventory",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -287,19 +317,16 @@ Examples:
 
   # Content inventory for 2025
   %(prog)s --year 2025 --human
-        """
+        """,
     )
-    parser.add_argument('--db-path', help='Path to Photos.sqlite database')
-    parser.add_argument('--library', help='Path to Photos library')
-    parser.add_argument('--search', help='Scene name to search for')
-    parser.add_argument('--min-confidence', type=float, default=0.0,
-                        help='Minimum confidence score (default: 0.0)')
-    parser.add_argument('--top', type=int, default=50,
-                        help='Number of search results (default: 50)')
-    parser.add_argument('--year', help='Filter to specific year (YYYY)')
-    parser.add_argument('-o', '--output', help='Output JSON file')
-    parser.add_argument('--human', action='store_true',
-                        help='Output human-readable summary')
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument("--search", help="Scene name to search for")
+    parser.add_argument("--min-confidence", type=float, default=0.0, help="Minimum confidence score (default: 0.0)")
+    parser.add_argument("--top", type=int, default=50, help="Number of search results (default: 50)")
+    parser.add_argument("--year", help="Filter to specific year (YYYY)")
+    parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
 
@@ -328,9 +355,10 @@ Examples:
     except Exception as e:
         print(f"Error searching scenes: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

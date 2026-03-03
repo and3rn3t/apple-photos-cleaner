@@ -6,21 +6,18 @@ A richer version of Apple's Memories with people, scenes, and quality context.
 
 import argparse
 import sys
-from datetime import datetime, date
 from collections import defaultdict
-from typing import Dict, List, Any, Optional
+from datetime import date, datetime
+from typing import Any, Optional
 
-from _common import (
-    PhotosDB, output_json, format_size, coredata_to_datetime,
-    get_quality_score
-)
+from _common import PhotosDB, coredata_to_datetime, format_size, get_quality_score, output_json
 
 
 def on_this_day(
     db_path: Optional[str] = None,
     target_date: Optional[str] = None,
     window_days: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Find photos taken on this date in previous years.
 
@@ -51,6 +48,7 @@ def on_this_day(
                 d = date(2000, month, day)  # Use a leap year as base
                 try:
                     from datetime import timedelta
+
                     d = d + timedelta(days=offset)
                     date_conditions.append(
                         f"(CAST(strftime('%m', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) AS INTEGER) = {d.month} "
@@ -99,29 +97,29 @@ def on_this_day(
         total_photos = 0
 
         for row in cursor.fetchall():
-            created = coredata_to_datetime(row['ZDATECREATED'])
+            created = coredata_to_datetime(row["ZDATECREATED"])
             if not created:
                 continue
 
             quality = get_quality_score(row)
             year_str = str(created.year)
             years_ago = current_year - created.year
-            size = row['ZORIGINALFILESIZE'] or 0
+            size = row["ZORIGINALFILESIZE"] or 0
 
             photo = {
-                'id': row['Z_PK'],
-                'filename': row['ZFILENAME'],
-                'created': created.isoformat(),
-                'year': created.year,
-                'years_ago': years_ago,
-                'kind': 'photo' if row['ZKIND'] == 0 else 'video',
-                'is_favorite': bool(row['ZFAVORITE']),
-                'is_screenshot': bool(row['ZISDETECTEDSCREENSHOT']),
-                'quality_score': round(quality, 3) if quality else None,
-                'size': size,
-                'size_formatted': format_size(size),
-                'latitude': row['ZLATITUDE'],
-                'longitude': row['ZLONGITUDE'],
+                "id": row["Z_PK"],
+                "filename": row["ZFILENAME"],
+                "created": created.isoformat(),
+                "year": created.year,
+                "years_ago": years_ago,
+                "kind": "photo" if row["ZKIND"] == 0 else "video",
+                "is_favorite": bool(row["ZFAVORITE"]),
+                "is_screenshot": bool(row["ZISDETECTEDSCREENSHOT"]),
+                "quality_score": round(quality, 3) if quality else None,
+                "size": size,
+                "size_formatted": format_size(size),
+                "latitude": row["ZLATITUDE"],
+                "longitude": row["ZLONGITUDE"],
             }
 
             by_year[year_str].append(photo)
@@ -131,14 +129,15 @@ def on_this_day(
         year_summaries = []
         for year_str in sorted(by_year.keys()):
             photos = by_year[year_str]
-            photo_ids = [p['id'] for p in photos]
+            photo_ids = [p["id"] for p in photos]
             years_ago = current_year - int(year_str)
 
             # Get people
             people = []
             if photo_ids:
-                placeholders = ','.join('?' * len(photo_ids))
-                cursor.execute(f"""
+                placeholders = ",".join("?" * len(photo_ids))
+                cursor.execute(
+                    f"""
                     SELECT DISTINCT p.ZFULLNAME, COUNT(df.ZASSET) as count
                     FROM ZPERSON p
                     JOIN ZDETECTEDFACE df ON p.Z_PK = df.ZPERSON
@@ -147,16 +146,16 @@ def on_this_day(
                     GROUP BY p.Z_PK
                     ORDER BY count DESC
                     LIMIT 5
-                """, photo_ids)
-                people = [
-                    {'name': row['ZFULLNAME'], 'count': row['count']}
-                    for row in cursor.fetchall()
-                ]
+                """,
+                    photo_ids,
+                )
+                people = [{"name": row["ZFULLNAME"], "count": row["count"]} for row in cursor.fetchall()]
 
             # Get scenes
             scenes = []
             if photo_ids:
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT sc.ZSCENENAME, COUNT(*) as count
                     FROM ZSCENECLASSIFICATION sc
                     WHERE sc.ZASSET IN ({placeholders})
@@ -164,55 +163,60 @@ def on_this_day(
                     GROUP BY sc.ZSCENENAME
                     ORDER BY count DESC
                     LIMIT 5
-                """, photo_ids)
+                """,
+                    photo_ids,
+                )
                 scenes = [
-                    {'scene': row['ZSCENENAME'], 'count': row['count']}
-                    for row in cursor.fetchall() if row['ZSCENENAME']
+                    {"scene": row["ZSCENENAME"], "count": row["count"]}
+                    for row in cursor.fetchall()
+                    if row["ZSCENENAME"]
                 ]
 
             # Best photo for this year
-            non_screenshots = [p for p in photos if not p['is_screenshot']]
+            non_screenshots = [p for p in photos if not p["is_screenshot"]]
             best = None
             if non_screenshots:
-                scored = [p for p in non_screenshots if p['quality_score'] is not None]
+                scored = [p for p in non_screenshots if p["quality_score"] is not None]
                 if scored:
-                    best = max(scored, key=lambda p: p['quality_score'])
+                    best = max(scored, key=lambda p: p["quality_score"])
                 else:
-                    favorites = [p for p in non_screenshots if p['is_favorite']]
+                    favorites = [p for p in non_screenshots if p["is_favorite"]]
                     best = favorites[0] if favorites else non_screenshots[0]
 
-            favorites_count = sum(1 for p in photos if p['is_favorite'])
-            total_size = sum(p['size'] for p in photos)
+            favorites_count = sum(1 for p in photos if p["is_favorite"])
+            total_size = sum(p["size"] for p in photos)
 
-            year_summaries.append({
-                'year': int(year_str),
-                'years_ago': years_ago,
-                'photo_count': len(photos),
-                'favorites': favorites_count,
-                'total_size': total_size,
-                'total_size_formatted': format_size(total_size),
-                'people': people,
-                'scenes': scenes,
-                'best_photo': best,
-                'photos': photos,
-            })
+            year_summaries.append(
+                {
+                    "year": int(year_str),
+                    "years_ago": years_ago,
+                    "photo_count": len(photos),
+                    "favorites": favorites_count,
+                    "total_size": total_size,
+                    "total_size_formatted": format_size(total_size),
+                    "people": people,
+                    "scenes": scenes,
+                    "best_photo": best,
+                    "photos": photos,
+                }
+            )
 
         # Sort by years ago (most recent first)
-        year_summaries.sort(key=lambda x: x['years_ago'])
+        year_summaries.sort(key=lambda x: x["years_ago"])
 
         return {
-            'target_date': target.isoformat(),
-            'target_month_day': f"{target.strftime('%B')} {target.day}",
-            'window_days': window_days,
-            'years': year_summaries,
-            'summary': {
-                'total_photos': total_photos,
-                'years_with_photos': len(year_summaries),
+            "target_date": target.isoformat(),
+            "target_month_day": f"{target.strftime('%B')} {target.day}",
+            "window_days": window_days,
+            "years": year_summaries,
+            "summary": {
+                "total_photos": total_photos,
+                "years_with_photos": len(year_summaries),
             },
         }
 
 
-def format_summary(data: Dict[str, Any]) -> str:
+def format_summary(data: dict[str, Any]) -> str:
     """Format on-this-day results as human-readable summary."""
     lines = []
     lines.append("📅 ON THIS DAY")
@@ -220,34 +224,36 @@ def format_summary(data: Dict[str, Any]) -> str:
     lines.append("")
 
     lines.append(f"Date: {data['target_month_day']}")
-    if data['window_days']:
+    if data["window_days"]:
         lines.append(f"Window: ±{data['window_days']} days")
-    lines.append(f"Photos found: {data['summary']['total_photos']:,} across {data['summary']['years_with_photos']} years")
+    lines.append(
+        f"Photos found: {data['summary']['total_photos']:,} across {data['summary']['years_with_photos']} years"
+    )
     lines.append("")
 
-    if not data['years']:
+    if not data["years"]:
         lines.append("No photos found for this date in previous years.")
         return "\n".join(lines)
 
-    for year_data in data['years']:
-        years_ago = year_data['years_ago']
+    for year_data in data["years"]:
+        years_ago = year_data["years_ago"]
         year_label = f"{years_ago} year{'s' if years_ago != 1 else ''} ago" if years_ago > 0 else "This year"
-        fav_str = f", ⭐ {year_data['favorites']}" if year_data['favorites'] else ""
+        fav_str = f", ⭐ {year_data['favorites']}" if year_data["favorites"] else ""
 
         lines.append(f"📆 {year_data['year']} ({year_label})")
         lines.append(f"   {year_data['photo_count']} photos{fav_str}")
 
-        if year_data['people']:
-            names = ', '.join(p['name'] for p in year_data['people'][:3])
+        if year_data["people"]:
+            names = ", ".join(p["name"] for p in year_data["people"][:3])
             lines.append(f"   👥 {names}")
 
-        if year_data['scenes']:
-            scene_str = ', '.join(s['scene'] for s in year_data['scenes'][:3])
+        if year_data["scenes"]:
+            scene_str = ", ".join(s["scene"] for s in year_data["scenes"][:3])
             lines.append(f"   🏷️  {scene_str}")
 
-        if year_data['best_photo']:
-            bp = year_data['best_photo']
-            q_str = f" Q:{bp['quality_score']:.2f}" if bp['quality_score'] else ""
+        if year_data["best_photo"]:
+            bp = year_data["best_photo"]
+            q_str = f" Q:{bp['quality_score']:.2f}" if bp["quality_score"] else ""
             lines.append(f"   📸 Best: {bp['filename']}{q_str}")
 
         lines.append("")
@@ -257,7 +263,7 @@ def format_summary(data: Dict[str, Any]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Show photos from this date in previous years',
+        description="Show photos from this date in previous years",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -269,16 +275,16 @@ Examples:
 
   # With a 2-day window (±2 days)
   %(prog)s --window 2 --human
-        """
+        """,
     )
-    parser.add_argument('--db-path', help='Path to Photos.sqlite database')
-    parser.add_argument('--library', help='Path to Photos library')
-    parser.add_argument('--date', help='Target date (YYYY-MM-DD), defaults to today')
-    parser.add_argument('--window', type=int, default=0,
-                        help='Include photos ± this many days around target (default: 0)')
-    parser.add_argument('-o', '--output', help='Output JSON file')
-    parser.add_argument('--human', action='store_true',
-                        help='Output human-readable summary')
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument("--date", help="Target date (YYYY-MM-DD), defaults to today")
+    parser.add_argument(
+        "--window", type=int, default=0, help="Include photos ± this many days around target (default: 0)"
+    )
+    parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
 
@@ -305,9 +311,10 @@ Examples:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

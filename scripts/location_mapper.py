@@ -5,33 +5,29 @@ Cluster GPS coordinates into locations, identify trips, find most-photographed p
 """
 
 import argparse
-import sys
 import math
+import sys
 from collections import defaultdict
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any, Optional
 
-from _common import (
-    PhotosDB, output_json, format_size, coredata_to_datetime
-)
+from _common import PhotosDB, coredata_to_datetime, format_size, output_json
 
 
 # Haversine distance in km
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two GPS coordinates in kilometers."""
-    R = 6371  # Earth radius in km
+    r = 6371  # Earth radius in km
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(dlon / 2) ** 2)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
+    return r * c
 
 
 def cluster_locations(
-    photos: List[Dict[str, Any]],
+    photos: list[dict[str, Any]],
     radius_km: float = 1.0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Cluster photos by GPS proximity using simple greedy clustering.
 
@@ -54,10 +50,7 @@ def cluster_locations(
 
         for idx in unassigned[1:]:
             p = photos[idx]
-            dist = haversine_km(
-                seed['latitude'], seed['longitude'],
-                p['latitude'], p['longitude']
-            )
+            dist = haversine_km(seed["latitude"], seed["longitude"], p["latitude"], p["longitude"])
             if dist <= radius_km:
                 cluster_indices.append(idx)
             else:
@@ -65,15 +58,17 @@ def cluster_locations(
 
         # Compute cluster centroid
         cluster_photos = [photos[i] for i in cluster_indices]
-        avg_lat = sum(p['latitude'] for p in cluster_photos) / len(cluster_photos)
-        avg_lon = sum(p['longitude'] for p in cluster_photos) / len(cluster_photos)
+        avg_lat = sum(p["latitude"] for p in cluster_photos) / len(cluster_photos)
+        avg_lon = sum(p["longitude"] for p in cluster_photos) / len(cluster_photos)
 
-        clusters.append({
-            'centroid_lat': round(avg_lat, 4),
-            'centroid_lon': round(avg_lon, 4),
-            'photo_count': len(cluster_photos),
-            'photos': cluster_photos,
-        })
+        clusters.append(
+            {
+                "centroid_lat": round(avg_lat, 4),
+                "centroid_lon": round(avg_lon, 4),
+                "photo_count": len(cluster_photos),
+                "photos": cluster_photos,
+            }
+        )
 
         unassigned = remaining
 
@@ -85,7 +80,7 @@ def analyze_locations(
     cluster_radius_km: float = 1.0,
     year: Optional[str] = None,
     min_photos: int = 3,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Analyze photo locations and identify trips/places.
 
@@ -102,17 +97,15 @@ def analyze_locations(
         cursor = conn.cursor()
 
         where_clauses = [
-            'a.ZTRASHEDSTATE != 1',
-            'a.ZLATITUDE IS NOT NULL',
-            'a.ZLONGITUDE IS NOT NULL',
-            'a.ZLATITUDE != 0',
-            'a.ZLONGITUDE != 0',
+            "a.ZTRASHEDSTATE != 1",
+            "a.ZLATITUDE IS NOT NULL",
+            "a.ZLONGITUDE IS NOT NULL",
+            "a.ZLATITUDE != 0",
+            "a.ZLONGITUDE != 0",
         ]
 
         if year:
-            where_clauses.append(
-                f"strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '{year}'"
-            )
+            where_clauses.append(f"strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '{year}'")
 
         query = f"""
             SELECT
@@ -136,25 +129,27 @@ def analyze_locations(
         total_assets = 0
 
         for row in cursor.fetchall():
-            created = coredata_to_datetime(row['ZDATECREATED'])
-            photos_with_location.append({
-                'id': row['Z_PK'],
-                'filename': row['ZFILENAME'],
-                'created': created.isoformat() if created else None,
-                'created_dt': created,
-                'latitude': row['ZLATITUDE'],
-                'longitude': row['ZLONGITUDE'],
-                'kind': 'photo' if row['ZKIND'] == 0 else 'video',
-                'is_favorite': bool(row['ZFAVORITE']),
-                'size': row['ZORIGINALFILESIZE'] or 0,
-            })
+            created = coredata_to_datetime(row["ZDATECREATED"])
+            photos_with_location.append(
+                {
+                    "id": row["Z_PK"],
+                    "filename": row["ZFILENAME"],
+                    "created": created.isoformat() if created else None,
+                    "created_dt": created,
+                    "latitude": row["ZLATITUDE"],
+                    "longitude": row["ZLONGITUDE"],
+                    "kind": "photo" if row["ZKIND"] == 0 else "video",
+                    "is_favorite": bool(row["ZFAVORITE"]),
+                    "size": row["ZORIGINALFILESIZE"] or 0,
+                }
+            )
             total_assets += 1
 
         # Count total assets (with and without location)
         cursor.execute("""
             SELECT COUNT(*) as total FROM ZASSET WHERE ZTRASHEDSTATE != 1
         """)
-        total_all = cursor.fetchone()['total']
+        total_all = cursor.fetchone()["total"]
         without_location = total_all - total_assets
 
         # Cluster locations
@@ -163,21 +158,21 @@ def analyze_locations(
         # Filter to significant clusters and enrich
         locations = []
         for cluster in clusters:
-            if cluster['photo_count'] < min_photos:
+            if cluster["photo_count"] < min_photos:
                 continue
 
-            cluster_photos = cluster['photos']
+            cluster_photos = cluster["photos"]
 
             # Date range
-            dates = [p['created_dt'] for p in cluster_photos if p['created_dt']]
+            dates = [p["created_dt"] for p in cluster_photos if p["created_dt"]]
             first = min(dates) if dates else None
             last = max(dates) if dates else None
 
             # Count by year-month
             by_month = defaultdict(int)
             for p in cluster_photos:
-                if p['created_dt']:
-                    key = p['created_dt'].strftime('%Y-%m')
+                if p["created_dt"]:
+                    key = p["created_dt"].strftime("%Y-%m")
                     by_month[key] += 1
 
             # Identify potential trips (>= 5 photos, spanning multiple hours)
@@ -186,15 +181,16 @@ def analyze_locations(
                 duration_hours = (last - first).total_seconds() / 3600
                 is_trip = duration_hours >= 4
 
-            favorites = sum(1 for p in cluster_photos if p['is_favorite'])
-            total_size = sum(p['size'] for p in cluster_photos)
+            favorites = sum(1 for p in cluster_photos if p["is_favorite"])
+            total_size = sum(p["size"] for p in cluster_photos)
 
             # Get people at this location
-            photo_ids = [p['id'] for p in cluster_photos]
+            photo_ids = [p["id"] for p in cluster_photos]
             people_at_location = []
             if photo_ids:
-                placeholders = ','.join('?' * len(photo_ids))
-                cursor.execute(f"""
+                placeholders = ",".join("?" * len(photo_ids))
+                cursor.execute(
+                    f"""
                     SELECT DISTINCT p.ZFULLNAME, COUNT(df.ZASSET) as count
                     FROM ZPERSON p
                     JOIN ZDETECTEDFACE df ON p.Z_PK = df.ZPERSON
@@ -203,54 +199,55 @@ def analyze_locations(
                     GROUP BY p.Z_PK
                     ORDER BY count DESC
                     LIMIT 5
-                """, photo_ids)
-                people_at_location = [
-                    {'name': row['ZFULLNAME'], 'count': row['count']}
-                    for row in cursor.fetchall()
-                ]
+                """,
+                    photo_ids,
+                )
+                people_at_location = [{"name": row["ZFULLNAME"], "count": row["count"]} for row in cursor.fetchall()]
 
-            locations.append({
-                'centroid_lat': cluster['centroid_lat'],
-                'centroid_lon': cluster['centroid_lon'],
-                'photo_count': cluster['photo_count'],
-                'favorites': favorites,
-                'total_size': total_size,
-                'total_size_formatted': format_size(total_size),
-                'first_photo': first.isoformat() if first else None,
-                'last_photo': last.isoformat() if last else None,
-                'is_trip': is_trip,
-                'by_month': dict(sorted(by_month.items())),
-                'people': people_at_location,
-            })
+            locations.append(
+                {
+                    "centroid_lat": cluster["centroid_lat"],
+                    "centroid_lon": cluster["centroid_lon"],
+                    "photo_count": cluster["photo_count"],
+                    "favorites": favorites,
+                    "total_size": total_size,
+                    "total_size_formatted": format_size(total_size),
+                    "first_photo": first.isoformat() if first else None,
+                    "last_photo": last.isoformat() if last else None,
+                    "is_trip": is_trip,
+                    "by_month": dict(sorted(by_month.items())),
+                    "people": people_at_location,
+                }
+            )
 
         # Sort by photo count
-        locations.sort(key=lambda x: x['photo_count'], reverse=True)
+        locations.sort(key=lambda x: x["photo_count"], reverse=True)
 
         # Travel timeline: identify distinct trips (clusters of photos far from "home")
-        trips = [loc for loc in locations if loc['is_trip']]
+        trips = [loc for loc in locations if loc["is_trip"]]
 
         return {
-            'locations': locations,
-            'trips': trips,
-            'summary': {
-                'total_with_location': total_assets,
-                'total_without_location': without_location,
-                'location_coverage': round(total_assets / total_all * 100, 1) if total_all else 0,
-                'unique_locations': len(locations),
-                'identified_trips': len(trips),
-                'cluster_radius_km': cluster_radius_km,
+            "locations": locations,
+            "trips": trips,
+            "summary": {
+                "total_with_location": total_assets,
+                "total_without_location": without_location,
+                "location_coverage": round(total_assets / total_all * 100, 1) if total_all else 0,
+                "unique_locations": len(locations),
+                "identified_trips": len(trips),
+                "cluster_radius_km": cluster_radius_km,
             },
         }
 
 
-def format_summary(data: Dict[str, Any]) -> str:
+def format_summary(data: dict[str, Any]) -> str:
     """Format location analysis as human-readable summary."""
     lines = []
     lines.append("📍 LOCATION / TRAVEL MAPPER")
     lines.append("=" * 50)
     lines.append("")
 
-    summary = data['summary']
+    summary = data["summary"]
     lines.append(f"Photos with GPS: {summary['total_with_location']:,} ({summary['location_coverage']}%)")
     lines.append(f"Without GPS: {summary['total_without_location']:,}")
     lines.append(f"Unique locations: {summary['unique_locations']:,}")
@@ -258,24 +255,24 @@ def format_summary(data: Dict[str, Any]) -> str:
     lines.append("")
 
     lines.append("Top Locations:")
-    for i, loc in enumerate(data['locations'][:15], 1):
-        trip_flag = " 🧳" if loc['is_trip'] else ""
-        fav_str = f" ⭐{loc['favorites']}" if loc['favorites'] else ""
+    for i, loc in enumerate(data["locations"][:15], 1):
+        trip_flag = " 🧳" if loc["is_trip"] else ""
+        fav_str = f" ⭐{loc['favorites']}" if loc["favorites"] else ""
         lines.append(f"  {i:>3}. ({loc['centroid_lat']}, {loc['centroid_lon']})")
         lines.append(f"       {loc['photo_count']:,} photos{fav_str}{trip_flag} | {loc['total_size_formatted']}")
 
-        if loc['first_photo'] and loc['last_photo']:
+        if loc["first_photo"] and loc["last_photo"]:
             lines.append(f"       📅 {loc['first_photo'][:10]} → {loc['last_photo'][:10]}")
 
-        if loc['people']:
-            names = ', '.join(p['name'] for p in loc['people'][:3])
+        if loc["people"]:
+            names = ", ".join(p["name"] for p in loc["people"][:3])
             lines.append(f"       👥 {names}")
 
     lines.append("")
 
-    if data['trips']:
+    if data["trips"]:
         lines.append("Identified Trips:")
-        for trip in data['trips'][:10]:
+        for trip in data["trips"][:10]:
             lines.append(f"  🧳 ({trip['centroid_lat']}, {trip['centroid_lon']})")
             lines.append(f"     {trip['photo_count']} photos, {trip['first_photo'][:10]} → {trip['last_photo'][:10]}")
         lines.append("")
@@ -285,25 +282,22 @@ def format_summary(data: Dict[str, Any]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Analyze photo locations and identify trips',
+        description="Analyze photo locations and identify trips",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s --human
   %(prog)s --radius 2.0 --year 2025
   %(prog)s --min-photos 10 --output locations.json
-        """
+        """,
     )
-    parser.add_argument('--db-path', help='Path to Photos.sqlite database')
-    parser.add_argument('--library', help='Path to Photos library')
-    parser.add_argument('--radius', type=float, default=1.0,
-                        help='Cluster radius in km (default: 1.0)')
-    parser.add_argument('--year', help='Filter to specific year (YYYY)')
-    parser.add_argument('--min-photos', type=int, default=3,
-                        help='Minimum photos per location cluster (default: 3)')
-    parser.add_argument('-o', '--output', help='Output JSON file')
-    parser.add_argument('--human', action='store_true',
-                        help='Output human-readable summary')
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument("--radius", type=float, default=1.0, help="Cluster radius in km (default: 1.0)")
+    parser.add_argument("--year", help="Filter to specific year (YYYY)")
+    parser.add_argument("--min-photos", type=int, default=3, help="Minimum photos per location cluster (default: 3)")
+    parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
 
@@ -331,9 +325,10 @@ Examples:
     except Exception as e:
         print(f"Error analyzing locations: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

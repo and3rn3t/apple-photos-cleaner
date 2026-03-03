@@ -6,16 +6,11 @@ All actions go through Photos.app for safety — nothing touches the database di
 """
 
 import argparse
-import json
 import subprocess
 import sys
-import os
-from typing import Dict, List, Any, Optional
+from typing import Any, Optional
 
-from _common import (
-    PhotosDB, output_json, format_size, coredata_to_datetime
-)
-
+from _common import PhotosDB, coredata_to_datetime, format_size, output_json
 
 # Maximum items per AppleScript batch (Photos.app can be slow with large batches)
 MAX_BATCH_SIZE = 50
@@ -23,11 +18,11 @@ MAX_BATCH_SIZE = 50
 
 def get_cleanup_candidates(
     db_path: Optional[str] = None,
-    category: str = 'old_screenshots',
+    category: str = "old_screenshots",
     screenshot_age_days: int = 30,
     quality_threshold: float = 0.3,
     limit: int = 500,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get cleanup candidates for a specific category.
 
@@ -47,18 +42,20 @@ def get_cleanup_candidates(
 
         candidates = []
 
-        if category in ('old_screenshots', 'all_screenshots'):
+        if category in ("old_screenshots", "all_screenshots"):
             from datetime import datetime, timedelta
+
             from _common import datetime_to_coredata
 
-            where = 'a.ZTRASHEDSTATE != 1 AND a.ZISDETECTEDSCREENSHOT = 1'
+            where = "a.ZTRASHEDSTATE != 1 AND a.ZISDETECTEDSCREENSHOT = 1"
 
-            if category == 'old_screenshots':
+            if category == "old_screenshots":
                 cutoff = datetime.now() - timedelta(days=screenshot_age_days)
                 cutoff_ts = datetime_to_coredata(cutoff)
-                where += f' AND a.ZDATECREATED < {cutoff_ts}'
+                where += f" AND a.ZDATECREATED < {cutoff_ts}"
 
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 SELECT
                     a.Z_PK, a.ZFILENAME, a.ZDATECREATED,
                     aa.ZORIGINALFILESIZE
@@ -67,21 +64,26 @@ def get_cleanup_candidates(
                 WHERE {where}
                 ORDER BY a.ZDATECREATED
                 LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
 
             for row in cursor.fetchall():
-                created = coredata_to_datetime(row['ZDATECREATED'])
-                candidates.append({
-                    'id': row['Z_PK'],
-                    'filename': row['ZFILENAME'],
-                    'created': created.isoformat() if created else None,
-                    'size': row['ZORIGINALFILESIZE'] or 0,
-                    'size_formatted': format_size(row['ZORIGINALFILESIZE'] or 0),
-                    'category': category,
-                })
+                created = coredata_to_datetime(row["ZDATECREATED"])
+                candidates.append(
+                    {
+                        "id": row["Z_PK"],
+                        "filename": row["ZFILENAME"],
+                        "created": created.isoformat() if created else None,
+                        "size": row["ZORIGINALFILESIZE"] or 0,
+                        "size_formatted": format_size(row["ZORIGINALFILESIZE"] or 0),
+                        "category": category,
+                    }
+                )
 
-        elif category == 'burst_leftovers':
-            cursor.execute(f"""
+        elif category == "burst_leftovers":
+            cursor.execute(
+                """
                 SELECT
                     a.Z_PK, a.ZFILENAME, a.ZDATECREATED,
                     aa.ZORIGINALFILESIZE
@@ -92,31 +94,35 @@ def get_cleanup_candidates(
                 AND (a.ZAVALANCHEPICKTYPE IS NULL OR a.ZAVALANCHEPICKTYPE = 0)
                 ORDER BY a.ZDATECREATED
                 LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
 
             for row in cursor.fetchall():
-                created = coredata_to_datetime(row['ZDATECREATED'])
-                candidates.append({
-                    'id': row['Z_PK'],
-                    'filename': row['ZFILENAME'],
-                    'created': created.isoformat() if created else None,
-                    'size': row['ZORIGINALFILESIZE'] or 0,
-                    'size_formatted': format_size(row['ZORIGINALFILESIZE'] or 0),
-                    'category': 'burst_leftovers',
-                })
+                created = coredata_to_datetime(row["ZDATECREATED"])
+                candidates.append(
+                    {
+                        "id": row["Z_PK"],
+                        "filename": row["ZFILENAME"],
+                        "created": created.isoformat() if created else None,
+                        "size": row["ZORIGINALFILESIZE"] or 0,
+                        "size_formatted": format_size(row["ZORIGINALFILESIZE"] or 0),
+                        "category": "burst_leftovers",
+                    }
+                )
 
-        elif category == 'low_quality':
-            from _common import get_quality_score, build_asset_query
+        elif category == "low_quality":
+            from _common import build_asset_query, get_quality_score
 
             query = build_asset_query(
                 where_clauses=[
-                    'a.ZTRASHEDSTATE != 1',
-                    'a.ZKIND = 0',
-                    'a.ZISDETECTEDSCREENSHOT != 1',
+                    "a.ZTRASHEDSTATE != 1",
+                    "a.ZKIND = 0",
+                    "a.ZISDETECTEDSCREENSHOT != 1",
                 ],
                 join_additional=True,
                 join_computed=True,
-                order_by='ca.ZFAILURESCORE DESC',
+                order_by="ca.ZFAILURESCORE DESC",
                 limit=limit * 3,  # fetch more since we filter by quality
             )
             cursor.execute(query)
@@ -124,21 +130,24 @@ def get_cleanup_candidates(
             for row in cursor.fetchall():
                 quality = get_quality_score(row)
                 if quality is not None and quality < quality_threshold:
-                    created = coredata_to_datetime(row['ZDATECREATED'])
-                    candidates.append({
-                        'id': row['Z_PK'],
-                        'filename': row['ZFILENAME'],
-                        'created': created.isoformat() if created else None,
-                        'size': row['ZORIGINALFILESIZE'] or 0,
-                        'size_formatted': format_size(row['ZORIGINALFILESIZE'] or 0),
-                        'quality_score': round(quality, 3),
-                        'category': 'low_quality',
-                    })
+                    created = coredata_to_datetime(row["ZDATECREATED"])
+                    candidates.append(
+                        {
+                            "id": row["Z_PK"],
+                            "filename": row["ZFILENAME"],
+                            "created": created.isoformat() if created else None,
+                            "size": row["ZORIGINALFILESIZE"] or 0,
+                            "size_formatted": format_size(row["ZORIGINALFILESIZE"] or 0),
+                            "quality_score": round(quality, 3),
+                            "category": "low_quality",
+                        }
+                    )
                     if len(candidates) >= limit:
                         break
 
-        elif category == 'duplicates':
-            cursor.execute(f"""
+        elif category == "duplicates":
+            cursor.execute(
+                """
                 SELECT
                     a.Z_PK, a.ZFILENAME, a.ZDATECREATED,
                     a.ZFAVORITE,
@@ -151,33 +160,37 @@ def get_cleanup_candidates(
                 AND a.ZFAVORITE != 1
                 ORDER BY a.ZDATECREATED
                 LIMIT ?
-            """, (limit,))
+            """,
+                (limit,),
+            )
 
             for row in cursor.fetchall():
-                created = coredata_to_datetime(row['ZDATECREATED'])
-                candidates.append({
-                    'id': row['Z_PK'],
-                    'filename': row['ZFILENAME'],
-                    'created': created.isoformat() if created else None,
-                    'size': row['ZORIGINALFILESIZE'] or 0,
-                    'size_formatted': format_size(row['ZORIGINALFILESIZE'] or 0),
-                    'category': 'duplicates',
-                })
+                created = coredata_to_datetime(row["ZDATECREATED"])
+                candidates.append(
+                    {
+                        "id": row["Z_PK"],
+                        "filename": row["ZFILENAME"],
+                        "created": created.isoformat() if created else None,
+                        "size": row["ZORIGINALFILESIZE"] or 0,
+                        "size_formatted": format_size(row["ZORIGINALFILESIZE"] or 0),
+                        "category": "duplicates",
+                    }
+                )
 
-        total_size = sum(c['size'] for c in candidates)
+        total_size = sum(c["size"] for c in candidates)
 
         return {
-            'candidates': candidates,
-            'summary': {
-                'category': category,
-                'count': len(candidates),
-                'total_size': total_size,
-                'total_size_formatted': format_size(total_size),
+            "candidates": candidates,
+            "summary": {
+                "category": category,
+                "count": len(candidates),
+                "total_size": total_size,
+                "total_size_formatted": format_size(total_size),
             },
         }
 
 
-def generate_trash_applescript(filenames: List[str]) -> str:
+def generate_trash_applescript(filenames: list[str]) -> str:
     """
     Generate AppleScript to move items to trash by filename matching.
 
@@ -191,9 +204,9 @@ def generate_trash_applescript(filenames: List[str]) -> str:
         AppleScript string
     """
     # Build the filename matching list
-    filename_list = ', '.join(f'"{fn}"' for fn in filenames)
+    filename_list = ", ".join(f'"{fn}"' for fn in filenames)
 
-    script = f'''
+    script = f"""
 set targetNames to {{{filename_list}}}
 set matchCount to 0
 
@@ -212,15 +225,15 @@ tell application "Photos"
 end tell
 
 return matchCount & " items moved to Recently Deleted"
-'''
+"""
     return script
 
 
 def execute_cleanup(
-    candidates: List[Dict[str, Any]],
+    candidates: list[dict[str, Any]],
     dry_run: bool = True,
     batch_size: int = MAX_BATCH_SIZE,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Execute cleanup by moving candidates to trash via AppleScript.
 
@@ -233,19 +246,19 @@ def execute_cleanup(
         Execution results
     """
     total = len(candidates)
-    total_size = sum(c['size'] for c in candidates)
+    total_size = sum(c["size"] for c in candidates)
     results = {
-        'dry_run': dry_run,
-        'total_candidates': total,
-        'total_size': total_size,
-        'total_size_formatted': format_size(total_size),
-        'batches': [],
-        'errors': [],
-        'success_count': 0,
+        "dry_run": dry_run,
+        "total_candidates": total,
+        "total_size": total_size,
+        "total_size_formatted": format_size(total_size),
+        "batches": [],
+        "errors": [],
+        "success_count": 0,
     }
 
     if dry_run:
-        results['message'] = (
+        results["message"] = (
             f"DRY RUN: Would move {total} items ({format_size(total_size)}) to Recently Deleted. "
             f"Run with --execute to proceed."
         )
@@ -253,80 +266,84 @@ def execute_cleanup(
 
     # Process in batches
     for i in range(0, total, batch_size):
-        batch = candidates[i:i + batch_size]
-        filenames = [c['filename'] for c in batch]
+        batch = candidates[i : i + batch_size]
+        filenames = [c["filename"] for c in batch]
 
         script = generate_trash_applescript(filenames)
 
         try:
             result = subprocess.run(
-                ['osascript', '-e', script],
+                ["osascript", "-e", script],
                 capture_output=True,
                 text=True,
                 timeout=120,
             )
 
             if result.returncode == 0:
-                results['batches'].append({
-                    'batch': i // batch_size + 1,
-                    'count': len(batch),
-                    'status': 'success',
-                    'output': result.stdout.strip(),
-                })
-                results['success_count'] += len(batch)
+                results["batches"].append(
+                    {
+                        "batch": i // batch_size + 1,
+                        "count": len(batch),
+                        "status": "success",
+                        "output": result.stdout.strip(),
+                    }
+                )
+                results["success_count"] += len(batch)
             else:
-                results['batches'].append({
-                    'batch': i // batch_size + 1,
-                    'count': len(batch),
-                    'status': 'error',
-                    'error': result.stderr.strip(),
-                })
-                results['errors'].append(result.stderr.strip())
+                results["batches"].append(
+                    {
+                        "batch": i // batch_size + 1,
+                        "count": len(batch),
+                        "status": "error",
+                        "error": result.stderr.strip(),
+                    }
+                )
+                results["errors"].append(result.stderr.strip())
 
         except subprocess.TimeoutExpired:
-            results['errors'].append(f"Batch {i // batch_size + 1} timed out")
+            results["errors"].append(f"Batch {i // batch_size + 1} timed out")
         except Exception as e:
-            results['errors'].append(f"Batch {i // batch_size + 1}: {str(e)}")
+            results["errors"].append(f"Batch {i // batch_size + 1}: {e!s}")
 
-    results['message'] = (
+    results["message"] = (
         f"Processed {results['success_count']}/{total} items. "
         f"Check Recently Deleted in Photos.app to confirm or recover."
     )
     return results
 
 
-def format_summary(data: Dict[str, Any]) -> str:
+def format_summary(data: dict[str, Any]) -> str:
     """Format cleanup candidates/results as human-readable summary."""
     lines = []
     lines.append("🧹 CLEANUP EXECUTOR")
     lines.append("=" * 50)
     lines.append("")
 
-    if 'candidates' in data:
-        s = data['summary']
+    if "candidates" in data:
+        s = data["summary"]
         lines.append(f"Category: {s['category']}")
         lines.append(f"Candidates: {s['count']:,}")
         lines.append(f"Total size: {s['total_size_formatted']}")
         lines.append("")
 
         lines.append("Items to clean up:")
-        for c in data['candidates'][:20]:
+        for c in data["candidates"][:20]:
             lines.append(f"  {c['filename']} ({c['size_formatted']})")
-            if c.get('quality_score') is not None:
+            if c.get("quality_score") is not None:
                 lines.append(f"    Quality: {c['quality_score']:.3f}")
 
-        if len(data['candidates']) > 20:
+        if len(data["candidates"]) > 20:
             lines.append(f"  ... and {len(data['candidates']) - 20} more")
         lines.append("")
         lines.append("⚠️  To execute, run with --execute flag")
         lines.append("    Items will be moved to Recently Deleted (recoverable for 30 days)")
 
-    elif 'message' in data:
-        lines.append(data['message'])
-        if data.get('errors'):
+    elif "message" in data:
+        lines.append(data["message"])
+        if data.get("errors"):
             lines.append("")
             lines.append("Errors:")
-            for err in data['errors']:
+            for err in data["errors"]:
                 lines.append(f"  ⚠️  {err}")
 
     lines.append("")
@@ -335,7 +352,7 @@ def format_summary(data: Dict[str, Any]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Execute cleanup operations via AppleScript',
+        description="Execute cleanup operations via AppleScript",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -360,27 +377,32 @@ Categories:
 
 ⚠️  SAFETY: Items are moved to Recently Deleted, not permanently deleted.
     You have 30 days to recover them in Photos.app.
-        """
+        """,
     )
-    parser.add_argument('--db-path', help='Path to Photos.sqlite database')
-    parser.add_argument('--library', help='Path to Photos library')
-    parser.add_argument('--category', required=True,
-                        choices=['old_screenshots', 'all_screenshots',
-                                 'burst_leftovers', 'low_quality', 'duplicates'],
-                        help='Category of items to clean up')
-    parser.add_argument('--screenshot-age', type=int, default=30,
-                        help='Screenshot age in days (default: 30)')
-    parser.add_argument('--quality-threshold', type=float, default=0.3,
-                        help='Quality threshold for low_quality category (default: 0.3)')
-    parser.add_argument('--limit', type=int, default=500,
-                        help='Maximum items to process (default: 500)')
-    parser.add_argument('--execute', action='store_true',
-                        help='Actually perform the cleanup (moves to Recently Deleted)')
-    parser.add_argument('--batch-size', type=int, default=MAX_BATCH_SIZE,
-                        help=f'Items per AppleScript batch (default: {MAX_BATCH_SIZE})')
-    parser.add_argument('-o', '--output', help='Output JSON file')
-    parser.add_argument('--human', action='store_true',
-                        help='Output human-readable summary')
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument(
+        "--category",
+        required=True,
+        choices=["old_screenshots", "all_screenshots", "burst_leftovers", "low_quality", "duplicates"],
+        help="Category of items to clean up",
+    )
+    parser.add_argument("--screenshot-age", type=int, default=30, help="Screenshot age in days (default: 30)")
+    parser.add_argument(
+        "--quality-threshold", type=float, default=0.3, help="Quality threshold for low_quality category (default: 0.3)"
+    )
+    parser.add_argument("--limit", type=int, default=500, help="Maximum items to process (default: 500)")
+    parser.add_argument(
+        "--execute", action="store_true", help="Actually perform the cleanup (moves to Recently Deleted)"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=MAX_BATCH_SIZE,
+        help=f"Items per AppleScript batch (default: {MAX_BATCH_SIZE})",
+    )
+    parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
 
@@ -396,27 +418,27 @@ Categories:
             limit=args.limit,
         )
 
-        if not data['candidates']:
+        if not data["candidates"]:
             print(f"No cleanup candidates found for category: {args.category}")
             return 0
 
         if args.execute:
             # Confirm before executing
-            count = len(data['candidates'])
-            total_size = format_size(sum(c['size'] for c in data['candidates']))
+            count = len(data["candidates"])
+            total_size = format_size(sum(c["size"] for c in data["candidates"]))
 
             print(f"⚠️  About to move {count} items ({total_size}) to Recently Deleted.")
             print(f"    Category: {args.category}")
-            print(f"    You can recover them within 30 days in Photos.app.")
+            print("    You can recover them within 30 days in Photos.app.")
             print()
 
             confirm = input("Type 'yes' to proceed: ").strip().lower()
-            if confirm != 'yes':
+            if confirm != "yes":
                 print("Cancelled.")
                 return 0
 
             result = execute_cleanup(
-                candidates=data['candidates'],
+                candidates=data["candidates"],
                 dry_run=False,
                 batch_size=args.batch_size,
             )
@@ -445,9 +467,10 @@ Categories:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

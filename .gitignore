@@ -26,6 +26,9 @@ wheels/
 htmlcov/
 .tox/
 
+# Type checking
+.mypy_cache/
+
 # Virtual environments
 venv/
 ENV/

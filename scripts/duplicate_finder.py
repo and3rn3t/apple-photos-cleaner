@@ -6,29 +6,34 @@ Find duplicate photos and suggest which to keep based on quality scores.
 import argparse
 import sys
 from collections import defaultdict
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any, Optional
 
 from _common import (
-    PhotosDB, output_json, format_size, coredata_to_datetime,
-    get_quality_score, is_favorite, is_screenshot
+    PhotosDB,
+    coredata_to_datetime,
+    format_size,
+    get_quality_score,
+    is_favorite,
+    is_screenshot,
+    output_json,
 )
 
 
-def find_duplicates(db_path: Optional[str] = None) -> Dict[str, Any]:
+def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
     """
     Find duplicate photos using multiple detection methods.
-    
+
     Returns:
         Dictionary with duplicate groups and recommendations
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
-        
+
         duplicate_groups = []
-        
+
         # Method 1: Apple's built-in duplicate detection
         cursor.execute("""
-            SELECT 
+            SELECT
                 a.Z_PK,
                 a.ZFILENAME,
                 a.ZDATECREATED,
@@ -49,23 +54,23 @@ def find_duplicates(db_path: Optional[str] = None) -> Dict[str, Any]:
             AND a.ZDUPLICATEASSETVISIBILITYSTATE > 0
             ORDER BY a.ZDATECREATED
         """)
-        
+
         apple_duplicates = {}
         for row in cursor.fetchall():
-            state = row['ZDUPLICATEASSETVISIBILITYSTATE']
+            state = row["ZDUPLICATEASSETVISIBILITYSTATE"]
             if state not in apple_duplicates:
                 apple_duplicates[state] = []
             apple_duplicates[state].append(row)
-        
+
         # Create groups from Apple's detection
-        for state, items in apple_duplicates.items():
+        for _state, items in apple_duplicates.items():
             if len(items) > 1:
-                group = create_duplicate_group(items, 'apple_builtin')
+                group = create_duplicate_group(items, "apple_builtin")
                 duplicate_groups.append(group)
-        
+
         # Method 2: Same timestamp + same dimensions
         cursor.execute("""
-            SELECT 
+            SELECT
                 a.Z_PK,
                 a.ZFILENAME,
                 a.ZDATECREATED,
@@ -86,191 +91,186 @@ def find_duplicates(db_path: Optional[str] = None) -> Dict[str, Any]:
             AND a.ZDUPLICATEASSETVISIBILITYSTATE = 0  -- not already caught by Apple
             ORDER BY a.ZDATECREATED, a.ZWIDTH, a.ZHEIGHT
         """)
-        
+
         # Group by (timestamp_rounded, width, height)
         timestamp_groups = defaultdict(list)
         for row in cursor.fetchall():
             # Round timestamp to nearest second
-            timestamp = int(row['ZDATECREATED']) if row['ZDATECREATED'] else 0
-            key = (timestamp, row['ZWIDTH'], row['ZHEIGHT'])
+            timestamp = int(row["ZDATECREATED"]) if row["ZDATECREATED"] else 0
+            key = (timestamp, row["ZWIDTH"], row["ZHEIGHT"])
             timestamp_groups[key].append(row)
-        
+
         # Add groups with multiple items
-        for key, items in timestamp_groups.items():
+        for _key, items in timestamp_groups.items():
             if len(items) > 1:
-                group = create_duplicate_group(items, 'timestamp_dimensions')
+                group = create_duplicate_group(items, "timestamp_dimensions")
                 duplicate_groups.append(group)
-        
+
         # Calculate totals
-        total_duplicates = sum(len(g['items']) for g in duplicate_groups)
-        total_can_delete = sum(len(g['items']) - 1 for g in duplicate_groups)
-        
-        total_size = sum(
-            sum(item['size'] for item in g['items'])
-            for g in duplicate_groups
-        )
-        
+        total_duplicates = sum(len(g["items"]) for g in duplicate_groups)
+        total_can_delete = sum(len(g["items"]) - 1 for g in duplicate_groups)
+
+        total_size = sum(sum(item["size"] for item in g["items"]) for g in duplicate_groups)
+
         potential_savings = sum(
-            sum(item['size'] for item in g['items'] if not item['recommended_keep'])
-            for g in duplicate_groups
+            sum(item["size"] for item in g["items"] if not item["recommended_keep"]) for g in duplicate_groups
         )
-        
+
         return {
-            'duplicate_groups': duplicate_groups,
-            'summary': {
-                'total_groups': len(duplicate_groups),
-                'total_duplicates': total_duplicates,
-                'can_delete': total_can_delete,
-                'total_size': total_size,
-                'total_size_formatted': format_size(total_size),
-                'potential_savings': potential_savings,
-                'potential_savings_formatted': format_size(potential_savings),
-            }
+            "duplicate_groups": duplicate_groups,
+            "summary": {
+                "total_groups": len(duplicate_groups),
+                "total_duplicates": total_duplicates,
+                "can_delete": total_can_delete,
+                "total_size": total_size,
+                "total_size_formatted": format_size(total_size),
+                "potential_savings": potential_savings,
+                "potential_savings_formatted": format_size(potential_savings),
+            },
         }
 
 
-def create_duplicate_group(items: List[Any], detection_method: str) -> Dict[str, Any]:
+def create_duplicate_group(items: list[Any], detection_method: str) -> dict[str, Any]:
     """
     Create a duplicate group with recommendation on which to keep.
-    
+
     Args:
         items: List of duplicate items (sqlite rows)
         detection_method: How duplicates were detected
-        
+
     Returns:
         Duplicate group dict
     """
     processed_items = []
-    
+
     for item in items:
-        created = coredata_to_datetime(item['ZDATECREATED'])
+        created = coredata_to_datetime(item["ZDATECREATED"])
         quality = get_quality_score(item)
-        
-        processed_items.append({
-            'id': item['Z_PK'],
-            'filename': item['ZFILENAME'],
-            'created': created.isoformat() if created else None,
-            'size': item['ZORIGINALFILESIZE'] or 0,
-            'size_formatted': format_size(item['ZORIGINALFILESIZE'] or 0),
-            'width': item['ZWIDTH'],
-            'height': item['ZHEIGHT'],
-            'is_favorite': is_favorite(item),
-            'is_screenshot': is_screenshot(item),
-            'quality_score': round(quality, 3) if quality is not None else None,
-        })
-    
+
+        processed_items.append(
+            {
+                "id": item["Z_PK"],
+                "filename": item["ZFILENAME"],
+                "created": created.isoformat() if created else None,
+                "size": item["ZORIGINALFILESIZE"] or 0,
+                "size_formatted": format_size(item["ZORIGINALFILESIZE"] or 0),
+                "width": item["ZWIDTH"],
+                "height": item["ZHEIGHT"],
+                "is_favorite": is_favorite(item),
+                "is_screenshot": is_screenshot(item),
+                "quality_score": round(quality, 3) if quality is not None else None,
+            }
+        )
+
     # Decide which to keep
     # Priority: favorite > highest quality > largest file
     best_item_idx = 0
     best_score = -1
-    
+
     for idx, item in enumerate(processed_items):
         score = 0
-        
+
         # Favorite gets huge boost
-        if item['is_favorite']:
+        if item["is_favorite"]:
             score += 1000
-        
+
         # Screenshot gets penalty
-        if item['is_screenshot']:
+        if item["is_screenshot"]:
             score -= 100
-        
+
         # Quality score
-        if item['quality_score'] is not None:
-            score += item['quality_score'] * 100
-        
+        if item["quality_score"] is not None:
+            score += item["quality_score"] * 100
+
         # File size (normalized)
-        score += item['size'] / 1000000  # MB
-        
+        score += item["size"] / 1000000  # MB
+
         if score > best_score:
             best_score = score
             best_item_idx = idx
-    
+
     # Mark recommended keep
     for idx, item in enumerate(processed_items):
-        item['recommended_keep'] = (idx == best_item_idx)
-    
+        item["recommended_keep"] = idx == best_item_idx
+
     return {
-        'detection_method': detection_method,
-        'items': processed_items,
-        'recommended_keep_id': processed_items[best_item_idx]['id'],
+        "detection_method": detection_method,
+        "items": processed_items,
+        "recommended_keep_id": processed_items[best_item_idx]["id"],
     }
 
 
-def format_summary(duplicates: Dict[str, Any]) -> str:
+def format_summary(duplicates: dict[str, Any]) -> str:
     """Format duplicate findings as human-readable summary."""
     lines = []
     lines.append("👥 DUPLICATE FINDER RESULTS")
     lines.append("=" * 50)
     lines.append("")
-    
-    summary = duplicates['summary']
-    
+
+    summary = duplicates["summary"]
+
     lines.append(f"Found {summary['total_groups']} duplicate groups")
     lines.append(f"Total duplicates: {summary['total_duplicates']}")
     lines.append(f"Can safely delete: {summary['can_delete']}")
     lines.append(f"Total size: {summary['total_size_formatted']}")
     lines.append(f"Potential savings: {summary['potential_savings_formatted']}")
     lines.append("")
-    
-    if duplicates['duplicate_groups']:
+
+    if duplicates["duplicate_groups"]:
         lines.append("Sample groups (showing first 5):")
-        for i, group in enumerate(duplicates['duplicate_groups'][:5], 1):
+        for i, group in enumerate(duplicates["duplicate_groups"][:5], 1):
             lines.append(f"\nGroup {i} ({group['detection_method']}):")
-            for item in group['items']:
-                keep_marker = "✓ KEEP" if item['recommended_keep'] else "  DELETE"
-                quality_str = f"Q:{item['quality_score']}" if item['quality_score'] else "Q:N/A"
-                fav_str = "★" if item['is_favorite'] else " "
-                lines.append(
-                    f"  {keep_marker} {fav_str} {item['filename']} "
-                    f"({item['size_formatted']}, {quality_str})"
-                )
-    
+            for item in group["items"]:
+                keep_marker = "✓ KEEP" if item["recommended_keep"] else "  DELETE"
+                quality_str = f"Q:{item['quality_score']}" if item["quality_score"] else "Q:N/A"
+                fav_str = "★" if item["is_favorite"] else " "
+                lines.append(f"  {keep_marker} {fav_str} {item['filename']} ({item['size_formatted']}, {quality_str})")
+
     return "\n".join(lines)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Find duplicate photos in Apple Photos library',
+        description="Find duplicate photos in Apple Photos library",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s
   %(prog)s --output duplicates.json
   %(prog)s --human
-        """
+        """,
     )
-    parser.add_argument('--db-path', help='Path to Photos.sqlite database')
-    parser.add_argument('--library', help='Path to Photos library')
-    parser.add_argument('-o', '--output', help='Output JSON file')
-    parser.add_argument('--human', action='store_true',
-                        help='Output human-readable summary instead of JSON')
-    
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("--human", action="store_true", help="Output human-readable summary instead of JSON")
+
     args = parser.parse_args()
-    
+
     try:
         db_path = args.db_path or args.library
         duplicates = find_duplicates(db_path)
-        
+
         if args.human:
             print(format_summary(duplicates))
         else:
             output_json(duplicates, args.output)
-            
+
             if not args.output:
                 print("\n" + format_summary(duplicates), file=sys.stderr)
-        
+
         return 0
-    
+
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     except Exception as e:
         print(f"Error finding duplicates: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

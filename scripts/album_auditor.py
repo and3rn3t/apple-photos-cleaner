@@ -6,17 +6,14 @@ and suggest album groupings from timeline clusters.
 
 import argparse
 import sys
-from collections import defaultdict
-from typing import Dict, List, Any, Optional
+from typing import Any, Optional
 
-from _common import (
-    PhotosDB, output_json, format_size, coredata_to_datetime
-)
+from _common import PhotosDB, format_size, output_json
 
 
 def audit_albums(
     db_path: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Audit albums for organization issues.
 
@@ -44,13 +41,13 @@ def audit_albums(
 
         albums = {}
         for row in cursor.fetchall():
-            albums[row['album_id']] = {
-                'id': row['album_id'],
-                'title': row['title'],
-                'kind': row['kind'],
-                'photo_ids': set(),
-                'photo_count': 0,
-                'total_size': 0,
+            albums[row["album_id"]] = {
+                "id": row["album_id"],
+                "title": row["title"],
+                "kind": row["kind"],
+                "photo_ids": set(),
+                "photo_count": 0,
+                "total_size": 0,
             }
 
         # Get photos in each album
@@ -73,14 +70,14 @@ def audit_albums(
 
             all_album_photo_ids = set()
             for row in cursor.fetchall():
-                aid = row['album_id']
+                aid = row["album_id"]
                 if aid in albums:
-                    albums[aid]['photo_ids'].add(row['asset_id'])
-                    albums[aid]['total_size'] += row['size'] or 0
-                all_album_photo_ids.add(row['asset_id'])
+                    albums[aid]["photo_ids"].add(row["asset_id"])
+                    albums[aid]["total_size"] += row["size"] or 0
+                all_album_photo_ids.add(row["asset_id"])
 
             for album in albums.values():
-                album['photo_count'] = len(album['photo_ids'])
+                album["photo_count"] = len(album["photo_ids"])
         else:
             all_album_photo_ids = set()
 
@@ -88,26 +85,29 @@ def audit_albums(
         cursor.execute("""
             SELECT COUNT(*) as total FROM ZASSET WHERE ZTRASHEDSTATE != 1
         """)
-        total_photos = cursor.fetchone()['total']
+        total_photos = cursor.fetchone()["total"]
 
         orphan_count = total_photos - len(all_album_photo_ids)
 
         # Orphan details (sample)
         if all_album_photo_ids:
-            placeholders = ','.join('?' * min(len(all_album_photo_ids), 500))
+            placeholders = ",".join("?" * min(len(all_album_photo_ids), 500))
             sample_ids = list(all_album_photo_ids)[:500]
 
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 SELECT COUNT(*) as count,
                     SUM(aa.ZORIGINALFILESIZE) as total_size
                 FROM ZASSET a
                 LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
                 WHERE a.ZTRASHEDSTATE != 1
                 AND a.Z_PK NOT IN ({placeholders})
-            """, sample_ids)
+            """,
+                sample_ids,
+            )
 
             orphan_row = cursor.fetchone()
-            orphan_size = orphan_row['total_size'] or 0
+            orphan_size = orphan_row["total_size"] or 0
         else:
             orphan_size = 0
 
@@ -115,76 +115,82 @@ def audit_albums(
         empty_albums = []
         tiny_albums = []  # <= 3 photos
         for album in albums.values():
-            if album['photo_count'] == 0:
-                empty_albums.append({
-                    'id': album['id'],
-                    'title': album['title'],
-                })
-            elif album['photo_count'] <= 3:
-                tiny_albums.append({
-                    'id': album['id'],
-                    'title': album['title'],
-                    'photo_count': album['photo_count'],
-                })
+            if album["photo_count"] == 0:
+                empty_albums.append(
+                    {
+                        "id": album["id"],
+                        "title": album["title"],
+                    }
+                )
+            elif album["photo_count"] <= 3:
+                tiny_albums.append(
+                    {
+                        "id": album["id"],
+                        "title": album["title"],
+                        "photo_count": album["photo_count"],
+                    }
+                )
 
         # Album overlap: find albums that share photos
         overlaps = []
-        album_list = [a for a in albums.values() if a['photo_count'] > 0]
+        album_list = [a for a in albums.values() if a["photo_count"] > 0]
         for i in range(len(album_list)):
             for j in range(i + 1, len(album_list)):
                 a1 = album_list[i]
                 a2 = album_list[j]
-                shared = a1['photo_ids'] & a2['photo_ids']
+                shared = a1["photo_ids"] & a2["photo_ids"]
                 if shared:
-                    overlap_pct_1 = round(len(shared) / len(a1['photo_ids']) * 100, 1) if a1['photo_ids'] else 0
-                    overlap_pct_2 = round(len(shared) / len(a2['photo_ids']) * 100, 1) if a2['photo_ids'] else 0
-                    overlaps.append({
-                        'album_1': a1['title'],
-                        'album_1_count': a1['photo_count'],
-                        'album_2': a2['title'],
-                        'album_2_count': a2['photo_count'],
-                        'shared_count': len(shared),
-                        'overlap_pct_album_1': overlap_pct_1,
-                        'overlap_pct_album_2': overlap_pct_2,
-                    })
+                    overlap_pct_1 = round(len(shared) / len(a1["photo_ids"]) * 100, 1) if a1["photo_ids"] else 0
+                    overlap_pct_2 = round(len(shared) / len(a2["photo_ids"]) * 100, 1) if a2["photo_ids"] else 0
+                    overlaps.append(
+                        {
+                            "album_1": a1["title"],
+                            "album_1_count": a1["photo_count"],
+                            "album_2": a2["title"],
+                            "album_2_count": a2["photo_count"],
+                            "shared_count": len(shared),
+                            "overlap_pct_album_1": overlap_pct_1,
+                            "overlap_pct_album_2": overlap_pct_2,
+                        }
+                    )
 
-        overlaps.sort(key=lambda x: x['shared_count'], reverse=True)
+        overlaps.sort(key=lambda x: x["shared_count"], reverse=True)
 
         # Album size ranking
         album_ranking = sorted(
             [
                 {
-                    'title': a['title'],
-                    'photo_count': a['photo_count'],
-                    'total_size': a['total_size'],
-                    'total_size_formatted': format_size(a['total_size']),
+                    "title": a["title"],
+                    "photo_count": a["photo_count"],
+                    "total_size": a["total_size"],
+                    "total_size_formatted": format_size(a["total_size"]),
                 }
                 for a in albums.values()
-                if a['photo_count'] > 0
+                if a["photo_count"] > 0
             ],
-            key=lambda x: x['photo_count'],
+            key=lambda x: x["photo_count"],
             reverse=True,
         )
 
         return {
-            'albums': album_ranking,
-            'empty_albums': empty_albums,
-            'tiny_albums': tiny_albums,
-            'overlaps': overlaps[:20],
-            'orphans': {
-                'count': orphan_count,
-                'total_size': orphan_size,
-                'total_size_formatted': format_size(orphan_size),
+            "albums": album_ranking,
+            "empty_albums": empty_albums,
+            "tiny_albums": tiny_albums,
+            "overlaps": overlaps[:20],
+            "orphans": {
+                "count": orphan_count,
+                "total_size": orphan_size,
+                "total_size_formatted": format_size(orphan_size),
             },
-            'summary': {
-                'total_albums': len(albums),
-                'albums_with_photos': len(album_ranking),
-                'empty_albums': len(empty_albums),
-                'tiny_albums': len(tiny_albums),
-                'total_photos': total_photos,
-                'photos_in_albums': len(all_album_photo_ids),
-                'orphan_photos': orphan_count,
-                'albums_with_overlap': len(overlaps),
+            "summary": {
+                "total_albums": len(albums),
+                "albums_with_photos": len(album_ranking),
+                "empty_albums": len(empty_albums),
+                "tiny_albums": len(tiny_albums),
+                "total_photos": total_photos,
+                "photos_in_albums": len(all_album_photo_ids),
+                "orphan_photos": orphan_count,
+                "albums_with_overlap": len(overlaps),
             },
         }
 
@@ -199,21 +205,21 @@ def _find_album_junction_table(cursor) -> Optional[tuple]:
     """
     # Get all tables
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables = [row['name'] for row in cursor.fetchall()]
+    tables = [row["name"] for row in cursor.fetchall()]
 
     # Look for junction tables matching the pattern
     for table in tables:
-        if table.startswith('Z_') and 'ASSETS' in table.upper():
+        if table.startswith("Z_") and "ASSETS" in table.upper():
             # Check columns
             cursor.execute(f"PRAGMA table_info({table})")
-            columns = [row['name'] for row in cursor.fetchall()]
+            columns = [row["name"] for row in cursor.fetchall()]
 
             album_col = None
             asset_col = None
             for col in columns:
-                if 'ALBUMS' in col.upper():
+                if "ALBUMS" in col.upper():
                     album_col = col
-                elif 'ASSETS' in col.upper():
+                elif "ASSETS" in col.upper():
                     asset_col = col
 
             if album_col and asset_col:
@@ -222,14 +228,14 @@ def _find_album_junction_table(cursor) -> Optional[tuple]:
     return None
 
 
-def format_summary(data: Dict[str, Any]) -> str:
+def format_summary(data: dict[str, Any]) -> str:
     """Format album audit as human-readable summary."""
     lines = []
     lines.append("📁 ALBUM AUDITOR")
     lines.append("=" * 50)
     lines.append("")
 
-    s = data['summary']
+    s = data["summary"]
     lines.append(f"Total albums: {s['total_albums']:,}")
     lines.append(f"Albums with photos: {s['albums_with_photos']:,}")
     lines.append(f"Empty albums: {s['empty_albums']:,}")
@@ -238,38 +244,40 @@ def format_summary(data: Dict[str, Any]) -> str:
     lines.append(f"Orphan photos (no album): {s['orphan_photos']:,}")
     lines.append("")
 
-    if data['orphans']['count'] > 0:
-        lines.append(f"📭 Orphan Photos:")
+    if data["orphans"]["count"] > 0:
+        lines.append("📭 Orphan Photos:")
         lines.append(f"  {data['orphans']['count']:,} photos not in any album")
         lines.append(f"  Total size: {data['orphans']['total_size_formatted']}")
         lines.append("")
 
-    if data['empty_albums']:
+    if data["empty_albums"]:
         lines.append(f"🗑️  Empty Albums ({len(data['empty_albums'])}):")
-        for album in data['empty_albums'][:10]:
+        for album in data["empty_albums"][:10]:
             lines.append(f"  • {album['title']}")
-        if len(data['empty_albums']) > 10:
+        if len(data["empty_albums"]) > 10:
             lines.append(f"  ... and {len(data['empty_albums']) - 10} more")
         lines.append("")
 
-    if data['tiny_albums']:
+    if data["tiny_albums"]:
         lines.append(f"📌 Tiny Albums ({len(data['tiny_albums'])}):")
-        for album in data['tiny_albums'][:10]:
+        for album in data["tiny_albums"][:10]:
             lines.append(f"  • {album['title']} ({album['photo_count']} photos)")
-        if len(data['tiny_albums']) > 10:
+        if len(data["tiny_albums"]) > 10:
             lines.append(f"  ... and {len(data['tiny_albums']) - 10} more")
         lines.append("")
 
-    if data['overlaps']:
+    if data["overlaps"]:
         lines.append(f"🔄 Album Overlaps (top {min(len(data['overlaps']), 10)}):")
-        for overlap in data['overlaps'][:10]:
-            lines.append(f"  \"{overlap['album_1']}\" ∩ \"{overlap['album_2']}\"")
-            lines.append(f"    {overlap['shared_count']} shared ({overlap['overlap_pct_album_1']}% / {overlap['overlap_pct_album_2']}%)")
+        for overlap in data["overlaps"][:10]:
+            lines.append(f'  "{overlap["album_1"]}" ∩ "{overlap["album_2"]}"')
+            lines.append(
+                f"    {overlap['shared_count']} shared ({overlap['overlap_pct_album_1']}% / {overlap['overlap_pct_album_2']}%)"
+            )
         lines.append("")
 
-    if data['albums']:
+    if data["albums"]:
         lines.append("📊 Largest Albums:")
-        for album in data['albums'][:15]:
+        for album in data["albums"][:15]:
             lines.append(f"  {album['title']}: {album['photo_count']:,} photos ({album['total_size_formatted']})")
         lines.append("")
 
@@ -278,19 +286,18 @@ def format_summary(data: Dict[str, Any]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Audit albums for organization issues',
+        description="Audit albums for organization issues",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s --human
   %(prog)s --output audit.json
-        """
+        """,
     )
-    parser.add_argument('--db-path', help='Path to Photos.sqlite database')
-    parser.add_argument('--library', help='Path to Photos library')
-    parser.add_argument('-o', '--output', help='Output JSON file')
-    parser.add_argument('--human', action='store_true',
-                        help='Output human-readable summary')
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
 
@@ -314,9 +321,10 @@ Examples:
     except Exception as e:
         print(f"Error auditing albums: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
