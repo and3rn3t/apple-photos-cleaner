@@ -4,14 +4,9 @@ Tests for _common.py utilities.
 """
 
 import sqlite3
-import sys
 from datetime import datetime
-from pathlib import Path
 
 import pytest
-
-# Add scripts directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from _common import (
     coredata_to_datetime,

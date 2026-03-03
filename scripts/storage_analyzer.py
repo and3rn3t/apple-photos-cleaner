@@ -3,11 +3,10 @@
 Detailed storage analysis: by year, type, source, growth trends, storage hogs.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, format_size, get_asset_kind_name
+from _common import PhotosDB, coredata_to_datetime, format_size, get_asset_kind_name, run_script
 
 
 def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
@@ -272,9 +271,10 @@ def format_summary(analysis: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    return run_script(
         description="Analyze Apple Photos storage",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        analyze_fn=lambda db_path, _args: analyze_storage(db_path),
+        format_fn=format_summary,
         epilog="""
 Examples:
   %(prog)s
@@ -282,38 +282,6 @@ Examples:
   %(prog)s --human
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary instead of JSON")
-
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        analysis = analyze_storage(db_path)
-
-        if args.human:
-            print(format_summary(analysis))
-        else:
-            from _common import output_json
-
-            output_json(analysis, args.output)
-
-            if not args.output:
-                print("\n" + format_summary(analysis), file=sys.stderr)
-
-        return 0
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error analyzing storage: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
 
 
 if __name__ == "__main__":

@@ -7,27 +7,17 @@ lighting, color, etc.) as feature vectors. Compares photos using cosine similari
 to surface groups of near-identical or thematically similar images.
 """
 
-import argparse
 import math
 import sys
 from typing import Any, Optional
 
 from _common import (
     PhotosDB,
+    _safe_float,
     coredata_to_datetime,
     format_size,
-    output_json,
+    run_script,
 )
-
-
-def _safe_float(val, default=0.0) -> float:
-    """Safely convert a value to float."""
-    if val is None:
-        return default
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return default
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -248,44 +238,35 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Find visually similar photos")
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument(
-        "--threshold",
-        type=float,
-        default=0.95,
-        help="Similarity threshold 0-1 (default: 0.95 = very similar)",
-    )
-    parser.add_argument("--year", help="Filter to specific year (YYYY)")
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=500,
-        help="Max photos to compare (default: 500, higher = slower)",
-    )
-    parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("-o", "--output", help="Output file")
-    args = parser.parse_args()
+    def add_args(parser):
+        parser.add_argument(
+            "--threshold",
+            type=float,
+            default=0.95,
+            help="Similarity threshold 0-1 (default: 0.95 = very similar)",
+        )
+        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+        parser.add_argument(
+            "--limit",
+            type=int,
+            default=500,
+            help="Max photos to compare (default: 500, higher = slower)",
+        )
 
-    try:
-        db_path = args.db_path or args.library
-        result = find_similar_photos(
+    def invoke(db_path, args):
+        return find_similar_photos(
             db_path=db_path,
             threshold=args.threshold,
             year=args.year,
             limit=args.limit,
         )
 
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-
-        return 0
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    return run_script(
+        description="Find visually similar photos",
+        analyze_fn=invoke,
+        format_fn=format_summary,
+        extra_args_fn=add_args,
+    )
 
 
 if __name__ == "__main__":

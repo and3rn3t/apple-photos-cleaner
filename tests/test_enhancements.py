@@ -9,15 +9,10 @@ Uses in-memory SQLite databases with sample data.
 """
 
 import sqlite3
-import sys
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# Add scripts directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from _common import datetime_to_coredata
 

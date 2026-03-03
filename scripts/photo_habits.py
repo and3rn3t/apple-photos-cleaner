@@ -4,12 +4,11 @@ Photo Habits & Insights: behavioral analytics for your photo library.
 Time-of-day patterns, busiest days, seasonal trends, photo vs video ratios.
 """
 
-import argparse
 import sys
 from collections import defaultdict
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, format_size, output_json
+from _common import PhotosDB, coredata_to_datetime, format_size, run_script
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -351,9 +350,20 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    def add_args(parser):
+        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+
+    def invoke(db_path, args):
+        return analyze_habits(
+            db_path=db_path,
+            year=args.year,
+        )
+
+    return run_script(
         description="Analyze photo-taking habits and patterns",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        analyze_fn=invoke,
+        format_fn=format_summary,
+        extra_args_fn=add_args,
         epilog="""
 Examples:
   %(prog)s --human
@@ -361,39 +371,6 @@ Examples:
   %(prog)s --output habits.json
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--year", help="Filter to specific year (YYYY)")
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
-
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        result = analyze_habits(
-            db_path=db_path,
-            year=args.year,
-        )
-
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-            if not args.output:
-                print("\n" + format_summary(result), file=sys.stderr)
-
-        return 0
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error analyzing habits: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ help:
 	@echo "  make install    - Install dev/test dependencies"
 
 install:
-	$(PIP) install -r requirements.txt
+	$(PIP) install -e ".[dev]"
 
 test:
 	$(PYTEST) tests/ -v

@@ -4,11 +4,10 @@ Find best photos and hidden gems: high-quality photos that aren't favorited.
 Surface overlooked great shots using Apple's computed quality scores.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
-from _common import PhotosDB, build_asset_query, coredata_to_datetime, format_size, get_quality_score, output_json
+from _common import PhotosDB, build_asset_query, coredata_to_datetime, format_size, get_quality_score, run_script
 
 
 def find_best_photos(
@@ -192,9 +191,28 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    def add_args(parser):
+        parser.add_argument(
+            "--min-quality", type=float, default=0.7, help="Minimum quality score threshold (default: 0.7)"
+        )
+        parser.add_argument("--top", type=int, default=50, help="Number of top photos to return (default: 50)")
+        parser.add_argument("--hidden-gems", action="store_true", help="Only show photos that are NOT favorited")
+        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+
+    def invoke(db_path, args):
+        return find_best_photos(
+            db_path=db_path,
+            min_quality=args.min_quality,
+            top_n=args.top,
+            hidden_gems_only=args.hidden_gems,
+            year=args.year,
+        )
+
+    return run_script(
         description="Find best photos and hidden gems in Apple Photos",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        analyze_fn=invoke,
+        format_fn=format_summary,
+        extra_args_fn=add_args,
         epilog="""
 Examples:
   %(prog)s --human
@@ -203,45 +221,6 @@ Examples:
   %(prog)s --output best.json
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--min-quality", type=float, default=0.7, help="Minimum quality score threshold (default: 0.7)")
-    parser.add_argument("--top", type=int, default=50, help="Number of top photos to return (default: 50)")
-    parser.add_argument("--hidden-gems", action="store_true", help="Only show photos that are NOT favorited")
-    parser.add_argument("--year", help="Filter to specific year (YYYY)")
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
-
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        result = find_best_photos(
-            db_path=db_path,
-            min_quality=args.min_quality,
-            top_n=args.top,
-            hidden_gems_only=args.hidden_gems,
-            year=args.year,
-        )
-
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-            if not args.output:
-                print("\n" + format_summary(result), file=sys.stderr)
-
-        return 0
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error finding best photos: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
 
 
 if __name__ == "__main__":

@@ -4,15 +4,14 @@ Shared utilities for Apple Photos database operations.
 All scripts use this module for consistent database access and data formatting.
 """
 
+import argparse
 import json
 import os
 import sqlite3
 import sys
+import traceback
 from datetime import datetime, timedelta
-from typing import Any, Optional
-
-# Python version check
-
+from typing import Any, Callable, Optional
 
 # Core Data reference date (January 1, 2001 00:00:00 UTC)
 CORE_DATA_EPOCH = datetime(2001, 1, 1, 0, 0, 0)
@@ -336,3 +335,85 @@ def build_asset_query(
         query += f"\nLIMIT {limit}"
 
     return query
+
+
+# ── Safe column / value helpers ──────────────────────────────────────────────
+
+
+def _safe_col(row: dict, name: str, default=None):
+    """Return column value if it exists, else *default*."""
+    return row.get(name, default)
+
+
+def _safe_float(val, default: float = 0.0) -> float:
+    """Safely convert a value to float."""
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+# ── Shared CLI boilerplate ───────────────────────────────────────────────────
+
+
+def run_script(
+    description: str,
+    analyze_fn: Callable,
+    format_fn: Callable[[dict], str],
+    extra_args_fn: Optional[Callable[[argparse.ArgumentParser], None]] = None,
+    epilog: Optional[str] = None,
+) -> int:
+    """
+    Shared CLI entry-point used by every analysis script.
+
+    Handles argparse setup (--db-path, --library, -o, --human),
+    invokes *analyze_fn*, and routes output through *format_fn* /
+    ``output_json``.
+
+    Args:
+        description: One-line argparse description.
+        analyze_fn:  ``fn(db_path, args) -> dict`` — the script's core work.
+        format_fn:   ``fn(result) -> str`` — human-readable formatter.
+        extra_args_fn: Optional callback to add script-specific argparse args.
+        epilog:      Optional argparse epilog text (examples, etc.).
+
+    Returns:
+        Exit code (0 = success, 1 = error).
+    """
+    parser = argparse.ArgumentParser(
+        description=description,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog,
+    )
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("--human", action="store_true", help="Output human-readable summary instead of JSON")
+
+    if extra_args_fn:
+        extra_args_fn(parser)
+
+    args = parser.parse_args()
+    db_path = args.db_path or args.library
+
+    try:
+        result = analyze_fn(db_path, args)
+
+        if args.human:
+            print(format_fn(result))
+        else:
+            output_json(result, args.output)
+            if not args.output:
+                print("\n" + format_fn(result), file=sys.stderr)
+
+        return 0
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        traceback.print_exc()
+        return 1

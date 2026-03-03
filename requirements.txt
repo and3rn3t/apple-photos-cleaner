@@ -1,4 +1,0 @@
-# Dev/test dependencies — core scripts use stdlib only
-pytest>=7.0.0
-pytest-cov>=4.0.0
-ruff>=0.4.0

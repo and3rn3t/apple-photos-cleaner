@@ -7,25 +7,16 @@ Uses Apple Photos' face detection attributes: quality measure, blur score,
 yaw angle, smile score, face size, and center position to rank face photos.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
 from _common import (
     PhotosDB,
+    _safe_float,
     coredata_to_datetime,
     format_size,
-    output_json,
+    run_script,
 )
-
-
-def _safe_float(val, default=0.0) -> float:
-    if val is None:
-        return default
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return default
 
 
 def compute_face_score(row: dict) -> float:
@@ -272,32 +263,23 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Score face quality per person")
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--person", help="Filter to specific person name")
-    parser.add_argument("--top", type=int, default=10, help="Top N best/worst per person (default: 10)")
-    parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("-o", "--output", help="Output file")
-    args = parser.parse_args()
+    def add_args(parser):
+        parser.add_argument("--person", help="Filter to specific person name")
+        parser.add_argument("--top", type=int, default=10, help="Top N best/worst per person (default: 10)")
 
-    try:
-        db_path = args.db_path or args.library
-        result = analyze_face_quality(
+    def invoke(db_path, args):
+        return analyze_face_quality(
             db_path=db_path,
             person_name=args.person,
             top_n=args.top,
         )
 
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-
-        return 0
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    return run_script(
+        description="Score face quality per person",
+        analyze_fn=invoke,
+        format_fn=format_summary,
+        extra_args_fn=add_args,
+    )
 
 
 if __name__ == "__main__":

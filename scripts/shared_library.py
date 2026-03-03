@@ -6,20 +6,16 @@ Identifies assets shared with/from the Shared Library, contributor
 breakdown, overlap analysis, and storage impact of shared content.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
 from _common import (
     PhotosDB,
+    _safe_col,
     coredata_to_datetime,
     format_size,
-    output_json,
+    run_script,
 )
-
-
-def _safe_col(row: dict, name: str, default=None):
-    return row.get(name, default)
 
 
 def analyze_shared_library(
@@ -230,26 +226,11 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze Shared Library in Apple Photos")
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("-o", "--output", help="Output file")
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        result = analyze_shared_library(db_path=db_path)
-
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-
-        return 0
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    return run_script(
+        description="Analyze Shared Library in Apple Photos",
+        analyze_fn=lambda db_path, _args: analyze_shared_library(db_path=db_path),
+        format_fn=format_summary,
+    )
 
 
 if __name__ == "__main__":

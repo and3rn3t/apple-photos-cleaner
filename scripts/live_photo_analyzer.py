@@ -4,16 +4,16 @@ Analyze Live Photos vs still photos: identify Live Photos, compare storage,
 find Live Photos that could be converted to stills to save space.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
 from _common import (
     PhotosDB,
+    _safe_col,
     coredata_to_datetime,
     format_size,
     get_quality_score,
-    output_json,
+    run_script,
 )
 
 # Live Photo sub-kinds
@@ -30,11 +30,6 @@ PLAYBACK_NAMES = {
     PLAYBACK_BOUNCE: "bounce",
     PLAYBACK_LONG_EXPOSURE: "long_exposure",
 }
-
-
-def _safe_col(row: dict, name: str, default=None):
-    """Return column value if it exists, else default."""
-    return row.get(name, default)
 
 
 def analyze_live_photos(
@@ -248,27 +243,18 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze Live Photos in Apple Photos")
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--year", help="Filter to specific year (YYYY)")
-    parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("-o", "--output", help="Output file")
-    args = parser.parse_args()
+    def add_args(parser):
+        parser.add_argument("--year", help="Filter to specific year (YYYY)")
 
-    try:
-        db_path = args.db_path or args.library
-        result = analyze_live_photos(db_path=db_path, year=args.year)
+    def invoke(db_path, args):
+        return analyze_live_photos(db_path=db_path, year=args.year)
 
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-
-        return 0
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    return run_script(
+        description="Analyze Live Photos in Apple Photos",
+        analyze_fn=invoke,
+        format_fn=format_summary,
+        extra_args_fn=add_args,
+    )
 
 
 if __name__ == "__main__":

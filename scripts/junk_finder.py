@@ -3,7 +3,6 @@
 Find junk photos: screenshots, low-quality images, burst leftovers, old screenshots.
 """
 
-import argparse
 import sys
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -15,7 +14,7 @@ from _common import (
     datetime_to_coredata,
     format_size,
     get_quality_score,
-    output_json,
+    run_script,
 )
 
 
@@ -264,9 +263,34 @@ def format_summary(junk: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    def add_args(parser):
+        parser.add_argument(
+            "--screenshot-age",
+            type=int,
+            default=30,
+            help="Consider screenshots older than N days as junk (default: 30)",
+        )
+        parser.add_argument(
+            "--quality-threshold",
+            type=float,
+            default=0.3,
+            help="Quality score threshold for low quality photos (default: 0.3)",
+        )
+        parser.add_argument("--no-duplicates", action="store_true", help="Skip duplicate detection")
+
+    def invoke(db_path, args):
+        return find_junk(
+            db_path=db_path,
+            screenshot_age_days=args.screenshot_age,
+            quality_threshold=args.quality_threshold,
+            include_duplicates=not args.no_duplicates,
+        )
+
+    return run_script(
         description="Find junk photos in Apple Photos library",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        analyze_fn=invoke,
+        format_fn=format_summary,
+        extra_args_fn=add_args,
         epilog="""
 Examples:
   %(prog)s
@@ -275,51 +299,6 @@ Examples:
   %(prog)s --human
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument(
-        "--screenshot-age", type=int, default=30, help="Consider screenshots older than N days as junk (default: 30)"
-    )
-    parser.add_argument(
-        "--quality-threshold",
-        type=float,
-        default=0.3,
-        help="Quality score threshold for low quality photos (default: 0.3)",
-    )
-    parser.add_argument("--no-duplicates", action="store_true", help="Skip duplicate detection")
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary instead of JSON")
-
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        junk = find_junk(
-            db_path=db_path,
-            screenshot_age_days=args.screenshot_age,
-            quality_threshold=args.quality_threshold,
-            include_duplicates=not args.no_duplicates,
-        )
-
-        if args.human:
-            print(format_summary(junk))
-        else:
-            output_json(junk, args.output)
-
-            if not args.output:
-                print("\n" + format_summary(junk), file=sys.stderr)
-
-        return 0
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error finding junk: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
 
 
 if __name__ == "__main__":

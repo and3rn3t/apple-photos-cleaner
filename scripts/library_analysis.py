@@ -3,7 +3,6 @@
 Analyze Apple Photos library: counts, storage, date ranges, people, quality scores.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
@@ -14,7 +13,7 @@ from _common import (
     format_size,
     get_asset_kind_name,
     get_quality_score,
-    output_json,
+    run_script,
 )
 
 
@@ -257,9 +256,10 @@ def format_summary(analysis: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    return run_script(
         description="Analyze Apple Photos library",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        analyze_fn=lambda db_path, _args: analyze_library(db_path),
+        format_fn=format_summary,
         epilog="""
 Examples:
   %(prog)s
@@ -267,37 +267,6 @@ Examples:
   %(prog)s --db-path ~/path/to/Photos.sqlite --human
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary instead of JSON")
-
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        analysis = analyze_library(db_path)
-
-        if args.human:
-            print(format_summary(analysis))
-        else:
-            output_json(analysis, args.output)
-
-            # Also print summary to stderr so it shows alongside JSON
-            if not args.output:
-                print("\n" + format_summary(analysis), file=sys.stderr)
-
-        return 0
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error analyzing library: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
 
 
 if __name__ == "__main__":

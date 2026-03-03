@@ -6,7 +6,6 @@ Selects top photos per season (spring, summer, fall, winter) using
 quality scores, favorites, and scene context to build highlight reels.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
@@ -15,7 +14,7 @@ from _common import (
     coredata_to_datetime,
     format_size,
     get_quality_score,
-    output_json,
+    run_script,
 )
 
 # Season definitions (Northern Hemisphere by default)
@@ -235,38 +234,29 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Curate seasonal photo highlights")
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--year", help="Filter to specific year (YYYY)")
-    parser.add_argument("--top", type=int, default=20, help="Top N photos per season (default: 20)")
-    parser.add_argument(
-        "--southern",
-        action="store_true",
-        help="Use Southern Hemisphere seasons",
-    )
-    parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("-o", "--output", help="Output file")
-    args = parser.parse_args()
+    def add_args(parser):
+        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+        parser.add_argument("--top", type=int, default=20, help="Top N photos per season (default: 20)")
+        parser.add_argument(
+            "--southern",
+            action="store_true",
+            help="Use Southern Hemisphere seasons",
+        )
 
-    try:
-        db_path = args.db_path or args.library
-        result = get_seasonal_highlights(
+    def invoke(db_path, args):
+        return get_seasonal_highlights(
             db_path=db_path,
             year=args.year,
             top_n=args.top,
             southern_hemisphere=args.southern,
         )
 
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-
-        return 0
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    return run_script(
+        description="Curate seasonal photo highlights",
+        analyze_fn=invoke,
+        format_fn=format_summary,
+        extra_args_fn=add_args,
+    )
 
 
 if __name__ == "__main__":

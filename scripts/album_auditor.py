@@ -4,11 +4,10 @@ Album Auditor: find orphan photos, empty albums, album overlap,
 and suggest album groupings from timeline clusters.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
-from _common import PhotosDB, format_size, output_json
+from _common import PhotosDB, format_size, run_script
 
 
 def audit_albums(
@@ -285,45 +284,16 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    return run_script(
         description="Audit albums for organization issues",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        analyze_fn=lambda db_path, _args: audit_albums(db_path=db_path),
+        format_fn=format_summary,
         epilog="""
 Examples:
   %(prog)s --human
   %(prog)s --output audit.json
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
-
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        result = audit_albums(db_path=db_path)
-
-        # Convert sets to lists for JSON serialization
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-            if not args.output:
-                print("\n" + format_summary(result), file=sys.stderr)
-
-        return 0
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error auditing albums: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
 
 
 if __name__ == "__main__":

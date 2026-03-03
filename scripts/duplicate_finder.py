@@ -3,7 +3,6 @@
 Find duplicate photos and suggest which to keep based on quality scores.
 """
 
-import argparse
 import sys
 from collections import defaultdict
 from typing import Any, Optional
@@ -15,7 +14,7 @@ from _common import (
     get_quality_score,
     is_favorite,
     is_screenshot,
-    output_json,
+    run_script,
 )
 
 
@@ -230,9 +229,10 @@ def format_summary(duplicates: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    return run_script(
         description="Find duplicate photos in Apple Photos library",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        analyze_fn=lambda db_path, _args: find_duplicates(db_path),
+        format_fn=format_summary,
         epilog="""
 Examples:
   %(prog)s
@@ -240,36 +240,6 @@ Examples:
   %(prog)s --human
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary instead of JSON")
-
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        duplicates = find_duplicates(db_path)
-
-        if args.human:
-            print(format_summary(duplicates))
-        else:
-            output_json(duplicates, args.output)
-
-            if not args.output:
-                print("\n" + format_summary(duplicates), file=sys.stderr)
-
-        return 0
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:
-        print(f"Error finding duplicates: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
 
 
 if __name__ == "__main__":

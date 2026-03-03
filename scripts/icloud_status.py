@@ -6,15 +6,15 @@ Reports on which photos are synced, local-only, cloud-only,
 download status, and potential sync issues.
 """
 
-import argparse
 import sys
 from typing import Any, Optional
 
 from _common import (
     PhotosDB,
+    _safe_col,
     coredata_to_datetime,
     format_size,
-    output_json,
+    run_script,
 )
 
 # iCloud local state values
@@ -25,10 +25,6 @@ CLOUD_STATE_NAMES = {
     0: "not_uploaded",
     1: "synced",
 }
-
-
-def _safe_col(row: dict, name: str, default=None):
-    return row.get(name, default)
 
 
 def analyze_icloud_status(
@@ -261,26 +257,11 @@ def format_summary(data: dict[str, Any]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Check iCloud sync status in Apple Photos")
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--human", action="store_true", help="Human-readable output")
-    parser.add_argument("-o", "--output", help="Output file")
-    args = parser.parse_args()
-
-    try:
-        db_path = args.db_path or args.library
-        result = analyze_icloud_status(db_path=db_path)
-
-        if args.human:
-            print(format_summary(result))
-        else:
-            output_json(result, args.output)
-
-        return 0
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    return run_script(
+        description="Check iCloud sync status in Apple Photos",
+        analyze_fn=lambda db_path, _args: analyze_icloud_status(db_path=db_path),
+        format_fn=format_summary,
+    )
 
 
 if __name__ == "__main__":

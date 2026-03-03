@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, datetime_to_coredata, format_date_range
+from _common import PhotosDB, coredata_to_datetime, datetime_to_coredata, format_date_range, output_json
 
 
 def generate_timeline(
@@ -346,8 +346,6 @@ Examples:
             else:
                 print(output_text)
         else:
-            from _common import output_json
-
             output_json(timeline, args.output)
 
             if not args.output:

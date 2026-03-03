@@ -8,14 +8,10 @@ Uses in-memory SQLite databases with sample data.
 """
 
 import sqlite3
-import sys
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from _common import datetime_to_coredata
 
