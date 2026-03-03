@@ -11,6 +11,7 @@ This document describes the key tables and fields in the Apple Photos SQLite dat
 Apple Photos uses Core Data timestamps, which are **seconds since January 1, 2001 00:00:00 UTC**.
 
 To convert to Python datetime:
+
 ```python
 from datetime import datetime, timedelta
 EPOCH = datetime(2001, 1, 1, 0, 0, 0)
@@ -18,6 +19,7 @@ dt = EPOCH + timedelta(seconds=timestamp)
 ```
 
 To convert to Unix timestamp (for SQLite datetime functions):
+
 ```sql
 -- Core Data timestamp + 978307200 = Unix timestamp
 datetime(ZDATECREATED + 978307200, 'unixepoch')
@@ -70,6 +72,7 @@ Extended metadata for assets. Joined via `Z_PK` matching `ZASSET.Z_PK`.
 | `ZTIMEZONENAME` | TEXT | Timezone name |
 
 **Join Example:**
+
 ```sql
 SELECT a.*, aa.ZORIGINALFILESIZE
 FROM ZASSET a
@@ -96,12 +99,14 @@ Apple's computed quality scores for photos. Joined via `Z_PK` matching `ZASSET.Z
 | `ZPLEASANTSYMMETRYSCORE` | REAL | **Higher is better** - symmetry | 0.0 - 1.0 |
 
 **Interpreting Scores:**
+
 - Scores are typically in range 0.0 to 1.0
 - Not all photos have all scores computed
 - Use multiple scores combined for best quality assessment
 - Low `ZFAILURESCORE` + high `ZPLEASANTCOMPOSITIONSCORE` = likely a good photo
 
 **Join Example:**
+
 ```sql
 SELECT a.*, ca.ZFAILURESCORE, ca.ZPLEASANTCOMPOSITIONSCORE
 FROM ZASSET a
@@ -133,6 +138,7 @@ Face detections linked to assets and people.
 | `ZPERSON` | INTEGER | Foreign key to `ZPERSON.Z_PK` (may be NULL for unidentified faces) |
 
 **Find Photos of a Person:**
+
 ```sql
 SELECT a.*
 FROM ZASSET a
@@ -156,6 +162,7 @@ User-created albums and smart albums.
 
 **Photos in Albums:**
 Photos are linked to albums through `Z_27ASSETS` junction table:
+
 ```sql
 SELECT a.*
 FROM ZASSET a
@@ -178,6 +185,7 @@ Machine learning scene/object classifications.
 | `ZCONFIDENCE` | REAL | Confidence score (0.0 - 1.0) |
 
 **Find Photos by Scene:**
+
 ```sql
 SELECT a.*
 FROM ZASSET a
@@ -210,6 +218,7 @@ Apple's built-in duplicate detection system.
 Photos with the same `ZDUPLICATEASSETVISIBILITYSTATE` value (> 0) are likely duplicates of each other.
 
 **Find Apple-Detected Duplicates:**
+
 ```sql
 SELECT * FROM ZASSET
 WHERE ZDUPLICATEASSETVISIBILITYSTATE > 0
@@ -222,15 +231,18 @@ ORDER BY ZDUPLICATEASSETVISIBILITYSTATE
 Burst mode photos (rapid sequence of shots).
 
 **`ZAVALANCHEKIND`:**
+
 - `0` or `NULL` = Not part of a burst
 - `> 0` = Part of a burst sequence (specific values vary)
 
 **`ZAVALANCHEPICKTYPE`:**
+
 - `NULL` or `0` = Not picked (leftover from burst)
 - `2` = User manually selected
 - `4` = Auto-selected by Photos
 
 **Find Unpicked Burst Photos (Potential Cleanup):**
+
 ```sql
 SELECT * FROM ZASSET
 WHERE ZAVALANCHEKIND > 0
@@ -256,6 +268,7 @@ Some assets may have additional flags indicating special types (Live Photos, etc
 ## Example Queries
 
 ### All Photos from a Specific Year
+
 ```sql
 SELECT a.*, aa.ZORIGINALFILESIZE
 FROM ZASSET a
@@ -265,6 +278,7 @@ AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '2025'
 ```
 
 ### Low Quality Photos
+
 ```sql
 SELECT a.*, ca.ZFAILURESCORE, ca.ZPLEASANTCOMPOSITIONSCORE
 FROM ZASSET a
@@ -276,6 +290,7 @@ ORDER BY ca.ZFAILURESCORE DESC
 ```
 
 ### Storage by Year
+
 ```sql
 SELECT 
     strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) as year,

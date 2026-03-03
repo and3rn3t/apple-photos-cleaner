@@ -173,29 +173,33 @@ def is_screenshot(row: sqlite3.Row) -> bool:
     return bool(row['ZISDETECTEDSCREENSHOT'])
 
 
-def is_burst(row: sqlite3.Row) -> bool:
+def is_burst(row) -> bool:
     """Check if an asset is part of a burst sequence."""
-    avalanche_kind = row.get('ZAVALANCHEKIND')
+    d = dict(row) if not isinstance(row, dict) else row
+    avalanche_kind = d.get('ZAVALANCHEKIND')
     return avalanche_kind is not None and avalanche_kind > 0
 
 
-def is_favorite(row: sqlite3.Row) -> bool:
+def is_favorite(row) -> bool:
     """Check if an asset is marked as favorite."""
-    return bool(row.get('ZFAVORITE', 0))
+    d = dict(row) if not isinstance(row, dict) else row
+    return bool(d.get('ZFAVORITE', 0))
 
 
-def is_hidden(row: sqlite3.Row) -> bool:
+def is_hidden(row) -> bool:
     """Check if an asset is hidden."""
-    return bool(row.get('ZHIDDEN', 0))
+    d = dict(row) if not isinstance(row, dict) else row
+    return bool(d.get('ZHIDDEN', 0))
 
 
-def is_trashed(row: sqlite3.Row) -> bool:
+def is_trashed(row) -> bool:
     """Check if an asset is in the trash."""
-    trashed_state = row.get('ZTRASHEDSTATE', 0)
+    d = dict(row) if not isinstance(row, dict) else row
+    trashed_state = d.get('ZTRASHEDSTATE', 0)
     return trashed_state == 1
 
 
-def get_quality_score(row: sqlite3.Row) -> Optional[float]:
+def get_quality_score(row) -> Optional[float]:
     """
     Calculate a simple quality score from multiple quality attributes.
     Higher is better. Returns None if no quality data available.
@@ -207,7 +211,13 @@ def get_quality_score(row: sqlite3.Row) -> Optional[float]:
     - ZNOISESCORE (lower is better, so we invert)
     
     All scores are typically in range [0, 1].
+    
+    Accepts both dict and sqlite3.Row objects.
     """
+    # sqlite3.Row supports keys() but not .get(); normalize to dict
+    if not isinstance(row, dict):
+        row = dict(row)
+    
     scores = []
     
     # Positive scores (higher is better)

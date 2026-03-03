@@ -17,6 +17,14 @@ Apple Photos is great at organizing and syncing photos, but it's not so great at
 - **Storage Analyzer** — Detailed breakdown by year, type, file format, growth trends, storage hogs
 - **Timeline Recap** — Generate narrative summaries of photo activity for any date range
 - **Smart Export** — Plan organized exports by year/month, person, album, or location
+- **Best Photos / Hidden Gems** — Surface high-quality photos you haven't favorited
+- **People Analyzer** — Deep analysis of people: co-occurrence, trends over time, best photos per person
+- **Location Mapper** — Cluster GPS coordinates into locations, identify trips, travel timelines
+- **Scene Search** — Search by ML-detected content (beach, dog, food) or generate content inventory
+- **Photo Habits** — Behavioral analytics: time-of-day, day-of-week, streaks, seasonal trends
+- **On This Day** — See what you photographed on today's date in prior years
+- **Album Auditor** — Find orphan photos, empty albums, overlap between albums
+- **Cleanup Executor** — Batch move junk to trash via AppleScript with confirmation
 
 **Safety:** All operations are READ-ONLY database queries. No photos are modified or deleted without explicit user action.
 
@@ -32,6 +40,14 @@ Use when users mention:
 - Getting photo timeline summaries ("what did I do last week?")
 - Burst photo cleanup
 - Finding storage hogs in Photos
+- Finding best or hidden gem photos
+- People in photos, who appears together
+- Where photos were taken, travel, trips, locations
+- Searching photos by content (beach, sunset, dog, food)
+- Photo-taking habits, patterns, streaks
+- "On this day" / photo memories from past years
+- Album organization, orphan photos, album cleanup
+- Actually deleting junk photos (batch cleanup)
 
 ## Quick Start
 
@@ -378,6 +394,425 @@ Folders:
 
 ---
 
+### 7. Best Photos / Hidden Gems
+
+Surface your highest-quality photos using Apple's computed quality scores. Find hidden gems — great photos you never favorited.
+
+```bash
+python3 scripts/best_photos.py [--min-quality N] [--top N] [--hidden-gems] [--human]
+```
+
+**Options:**
+- `--min-quality N` — Minimum quality score threshold (default: 0.7, range: 0.0-1.0)
+- `--top N` — Number of top photos to return (default: 50)
+- `--hidden-gems` — Only show photos that are NOT favorited
+- `--year YYYY` — Filter to specific year
+- `--human` — Human-readable summary
+- `--output FILE` — Write JSON to file
+
+**What It Shows:**
+- Quality score distribution across your library (excellent/good/average/poor)
+- Top N photos ranked by quality with detailed score breakdowns
+- Hidden gems: high-quality photos you haven't favorited yet
+- Per-photo scores for composition, lighting, symmetry, patterns, etc.
+
+**Example Output:**
+```
+⭐ BEST PHOTOS / HIDDEN GEMS
+==================================================
+
+Photos with quality scores: 11,234
+Above threshold (0.7): 2,456
+Hidden gems (great but not favorited): 2,100
+Already favorited high-quality: 356
+
+Quality Distribution:
+  🌟 Excellent (≥0.85): 456
+  ✅ Good (≥0.70):      2,000
+  📊 Average (≥0.50):   5,234
+  📉 Below avg (≥0.30): 2,544
+  ❌ Poor (<0.30):       1,000
+
+Top 20 Photos:
+    1. IMG_1234.jpg
+       Q:0.952 | 4.2 MB | 4032x3024 💎
+       📐 composition:0.95, lighting:0.92, symmetry:0.88
+```
+
+**Usage in Conversation:**
+
+**User:** "Show me my best photos"  
+**AI:** *Runs best_photos.py with --human flag, highlights top shots*
+
+**User:** "Find hidden gems I haven't favorited"  
+**AI:** *Runs best_photos.py with --hidden-gems, suggests which to favorite*
+
+**User:** "What are my best photos from 2025?"  
+**AI:** *Runs best_photos.py with --year 2025, shows quality distribution and top picks*
+
+---
+
+### 8. People Analyzer
+
+Deep analysis of people detected in your photos: who appears most, who's photographed together, trends over time, best photo of each person.
+
+```bash
+python3 scripts/people_analyzer.py [--min-photos N] [--top N] [--human]
+```
+
+**Options:**
+- `--min-photos N` — Minimum photos to include a person (default: 5)
+- `--top N` — Number of top people to analyze in detail (default: 20)
+- `--human` — Human-readable summary
+- `--output FILE` — Write JSON to file
+
+**What It Shows:**
+- All named people ranked by photo count
+- Per-person yearly trends (are you photographing them more or less?)
+- Co-occurrence analysis (who appears together most)
+- Best quality photo for each person
+- Favorites count per person
+- Unnamed face count
+
+**Example Output:**
+```
+👥 PEOPLE ANALYZER
+==================================================
+
+Named people (≥5 photos): 15
+Photos with unnamed faces: 1,234
+
+Top People:
+  Jonah: 3,456 photos (★ 89)
+    📅 2023:890, 2024:1,200, 2025:1,366
+  Silas: 3,234 photos (★ 76)
+    📅 2023:845, 2024:1,100, 2025:1,289
+
+Frequently Photographed Together:
+  Jonah + Silas: 2,100 photos
+  Jonah + Mom: 456 photos
+```
+
+**Usage in Conversation:**
+
+**User:** "Who's in my photos the most?"  
+**AI:** *Runs people_analyzer.py, reports top people with counts*
+
+**User:** "Who do I photograph together?"  
+**AI:** *Runs people_analyzer.py, focuses on co-occurrence analysis*
+
+---
+
+### 9. Location / Travel Mapper
+
+Analyze where your photos were taken. Clusters GPS coordinates into locations, identifies trips, and shows most-photographed places.
+
+```bash
+python3 scripts/location_mapper.py [--radius N] [--year YYYY] [--human]
+```
+
+**Options:**
+- `--radius N` — Cluster radius in km (default: 1.0)
+- `--year YYYY` — Filter to specific year
+- `--min-photos N` — Minimum photos per location cluster (default: 3)
+- `--human` — Human-readable summary
+- `--output FILE` — Write JSON to file
+
+**What It Shows:**
+- GPS coverage percentage
+- Location clusters with photo counts, date ranges, and people
+- Identified trips (clusters with 5+ photos spanning 4+ hours)
+- Per-location monthly breakdown
+
+**Example Output:**
+```
+📍 LOCATION / TRAVEL MAPPER
+==================================================
+
+Photos with GPS: 8,456 (67.9%)
+Without GPS: 3,997
+Unique locations: 45
+Possible trips: 12
+
+Top Locations:
+    1. (41.5369, -90.5776)
+       1,234 photos ⭐12 🧳 | 5.2 GB
+       📅 2020-01-15 → 2025-03-03
+       👥 Jonah, Silas
+```
+
+**Usage in Conversation:**
+
+**User:** "Where have I taken the most photos?"  
+**AI:** *Runs location_mapper.py, reports top locations*
+
+**User:** "Show me my trips from 2025"  
+**AI:** *Runs location_mapper.py with --year 2025, highlights identified trips*
+
+---
+
+### 10. Scene / Content Search
+
+Search photos by ML-detected scene classifications (beach, sunset, dog, food, etc.) or generate a complete content inventory.
+
+```bash
+python3 scripts/scene_search.py [--search TERM] [--min-confidence N] [--human]
+```
+
+**Options:**
+- `--search TERM` — Scene name to search for (omit for content inventory)
+- `--min-confidence N` — Minimum confidence score (default: 0.0)
+- `--top N` — Number of search results (default: 50)
+- `--year YYYY` — Filter to specific year
+- `--human` — Human-readable summary
+- `--output FILE` — Write JSON to file
+
+**Modes:**
+1. **Search mode** (`--search beach`) — Find all photos matching a scene label
+2. **Inventory mode** (no --search) — Show all scene labels with counts, grouped by category
+
+**Example Output (inventory):**
+```
+🏷️  SCENE / CONTENT SEARCH
+==================================================
+
+Unique scene labels: 234
+Scene-tagged entries: 45,678
+Library total: 12,453
+
+By Category:
+  📂 Nature Outdoor (5,678 photos)
+    beach: 234
+    sunset: 189
+    mountain: 156
+  📂 Animals (2,345 photos)
+    dog: 1,234
+    cat: 567
+  📂 Food Drink (1,890 photos)
+    food: 890
+    coffee: 234
+```
+
+**Usage in Conversation:**
+
+**User:** "How many beach photos do I have?"  
+**AI:** *Runs scene_search.py --search beach, reports count and related scenes*
+
+**User:** "What kinds of photos do I take?"  
+**AI:** *Runs scene_search.py (inventory mode), summarizes categories*
+
+---
+
+### 11. Photo Habits & Insights
+
+Behavioral analytics: when you shoot most, busiest days, seasonal patterns, streaks, photo vs video ratio trends.
+
+```bash
+python3 scripts/photo_habits.py [--year YYYY] [--human]
+```
+
+**Options:**
+- `--year YYYY` — Filter to specific year
+- `--human` — Human-readable summary
+- `--output FILE` — Write JSON to file
+
+**What It Shows:**
+- Time-of-day breakdown (morning/afternoon/evening/night)
+- Peak hour, peak day of week, peak month
+- Day-of-week distribution with visual bars
+- Longest photo streak (consecutive days with photos)
+- Busiest single day
+- Year-over-year trends with video ratio
+- Monthly trend with photos/videos/screenshots breakdown
+
+**Example Output:**
+```
+📊 PHOTO HABITS & INSIGHTS
+==================================================
+
+Total: 11,234 photos, 891 videos, 328 screenshots
+Average per active day: 8.3
+
+⏰ When You Shoot:
+  Peak hour: 14:00
+  Peak day: Saturday
+  Peak month: Jul
+
+  Time of Day:
+    Morning (6am-12pm):   3,456 (28.1%) █████████
+    Afternoon (12pm-6pm): 5,123 (41.6%) █████████████
+    Evening (6pm-12am):   2,987 (24.3%) ████████
+    Night (12am-6am):       737 (6.0%)  ██
+
+🔥 Streaks:
+  Longest streak: 45 consecutive days
+    (2024-06-15 → 2024-07-29)
+```
+
+**Usage in Conversation:**
+
+**User:** "What are my photo-taking patterns?"  
+**AI:** *Runs photo_habits.py, narrates key insights*
+
+**User:** "When do I take the most photos?"  
+**AI:** *Runs photo_habits.py, highlights peak times and days*
+
+---
+
+### 12. On This Day / Memory Lane
+
+See what you photographed on today's date in previous years. Includes people, scenes, and quality context.
+
+```bash
+python3 scripts/on_this_day.py [--date YYYY-MM-DD] [--window N] [--human]
+```
+
+**Options:**
+- `--date YYYY-MM-DD` — Target date (defaults to today)
+- `--window N` — Include photos ±N days around target (default: 0)
+- `--human` — Human-readable summary
+- `--output FILE` — Write JSON to file
+
+**What It Shows:**
+- Photos from each previous year on the same date
+- People, scenes, and best photo for each year
+- Favorites count per year
+- How many years ago each set of photos was taken
+
+**Example Output:**
+```
+📅 ON THIS DAY
+==================================================
+
+Date: March 3
+Photos found: 45 across 4 years
+
+📆 2025 (1 year ago)
+   12 photos, ⭐ 3
+   👥 Jonah, Silas
+   🏷️  swimming, pool
+   📸 Best: IMG_1234.jpg Q:0.89
+
+📆 2024 (2 years ago)
+   8 photos
+   👥 Jonah
+   🏷️  park, outdoor
+```
+
+**Usage in Conversation:**
+
+**User:** "What did I do on this day in past years?"  
+**AI:** *Runs on_this_day.py, narrates memories year by year*
+
+**User:** "Show me memories from March 3"  
+**AI:** *Runs on_this_day.py --date 2026-03-03, tells the story*
+
+**AI Tip:** Narrate memories warmly! "2 years ago today, you were at the pool with Jonah and Silas — you took 12 photos and favorited 3 of them. The best shot has a quality score of 0.89!"
+
+---
+
+### 13. Album Auditor
+
+Find orphan photos (not in any album), empty albums, tiny albums, and overlapping albums.
+
+```bash
+python3 scripts/album_auditor.py [--human]
+```
+
+**Options:**
+- `--human` — Human-readable summary
+- `--output FILE` — Write JSON to file
+
+**What It Shows:**
+- Orphan photos count (not in any album)
+- Empty albums that can be deleted
+- Tiny albums (≤3 photos) that might be incomplete
+- Album overlap (shared photos between albums, with percentages)
+- Album size ranking
+
+**Example Output:**
+```
+📁 ALBUM AUDITOR
+==================================================
+
+Total albums: 45
+Albums with photos: 38
+Empty albums: 4
+Tiny albums (≤3 photos): 7
+Photos in albums: 8,234 / 12,453
+Orphan photos (no album): 4,219
+
+📭 Orphan Photos:
+  4,219 photos not in any album
+  Total size: 18.3 GB
+
+🗑️  Empty Albums (4):
+  • Old Vacation
+  • Test Album
+
+🔄 Album Overlaps:
+  "Vacation 2024" ∩ "Summer 2024"
+    45 shared (12.3% / 8.9%)
+```
+
+**Usage in Conversation:**
+
+**User:** "Are my photos well organized?"  
+**AI:** *Runs album_auditor.py, reports orphans, empty albums, and overlap*
+
+**User:** "How many photos aren't in any album?"  
+**AI:** *Runs album_auditor.py, reports orphan count and size*
+
+---
+
+### 14. Cleanup Executor
+
+Actually move junk photos to trash via AppleScript. Supports old screenshots, burst leftovers, low quality, and duplicates. All items go to Recently Deleted (recoverable for 30 days).
+
+```bash
+python3 scripts/cleanup_executor.py --category CATEGORY [--execute] [--human]
+```
+
+**Options:**
+- `--category` — What to clean up: `old_screenshots`, `all_screenshots`, `burst_leftovers`, `low_quality`, `duplicates`
+- `--screenshot-age N` — Screenshot age in days for old_screenshots (default: 30)
+- `--quality-threshold N` — Quality threshold for low_quality (default: 0.3)
+- `--limit N` — Maximum items to process (default: 500)
+- `--execute` — Actually perform the cleanup (without this, preview only)
+- `--batch-size N` — Items per AppleScript batch (default: 50)
+- `--human` — Human-readable summary
+
+**Safety:**
+- Without `--execute`, shows preview only (dry run)
+- With `--execute`, requires typing 'yes' to confirm
+- Items are moved to Recently Deleted (not permanently deleted)
+- 30-day recovery window in Photos.app
+- Uses AppleScript through Photos.app (never touches database directly)
+
+**Example Usage:**
+```bash
+# Preview what would be cleaned
+python3 scripts/cleanup_executor.py --category old_screenshots --human
+
+# Actually clean up (with confirmation prompt)
+python3 scripts/cleanup_executor.py --category old_screenshots --execute
+
+# Clean burst leftovers
+python3 scripts/cleanup_executor.py --category burst_leftovers --execute
+```
+
+**Usage in Conversation:**
+
+**User:** "Delete my old screenshots"  
+**AI:** *Runs cleanup_executor.py --category old_screenshots --human first to show preview, then prompts user before running with --execute*
+
+**User:** "Clean up burst photos"  
+**AI:** *Runs cleanup_executor.py --category burst_leftovers --human, shows count and size, asks for confirmation*
+
+**⚠️ AI Tip:** Always show the preview first! Never run with --execute without showing the user what will be affected and getting confirmation.
+
+---
+
 ## Database Schema Reference
 
 Detailed schema documentation is in `references/database-schema.md`. Key tables:
@@ -432,6 +867,12 @@ python3 scripts/storage_analyzer.py | jq '.by_year'
 
 # Get top people for the year
 python3 scripts/library_analysis.py | jq '.top_people'
+
+# Photo habits for the year
+python3 scripts/photo_habits.py --year 2024 --human
+
+# Best photos of the year
+python3 scripts/best_photos.py --year 2024 --top 20 --human
 ```
 
 ### Workflow 4: Export Organized Archive
@@ -441,6 +882,58 @@ python3 scripts/library_analysis.py | jq '.top_people'
 python3 scripts/smart_export.py --output-dir ~/Desktop/Photos-Export --favorites --start-date 2024-01-01 --plan-only
 
 # Review plan, then execute (manual for now)
+```
+
+### Workflow 5: Deep Cleanup
+
+```bash
+# Find all junk
+python3 scripts/junk_finder.py --human
+
+# Preview old screenshots
+python3 scripts/cleanup_executor.py --category old_screenshots --human
+
+# Execute cleanup (with confirmation)
+python3 scripts/cleanup_executor.py --category old_screenshots --execute
+
+# Clean burst leftovers
+python3 scripts/cleanup_executor.py --category burst_leftovers --execute
+
+# Check album health
+python3 scripts/album_auditor.py --human
+```
+
+### Workflow 6: Daily Memory Check
+
+```bash
+# See what happened on this day in past years
+python3 scripts/on_this_day.py --human
+
+# With a wider window
+python3 scripts/on_this_day.py --window 2 --human
+```
+
+### Workflow 7: Location & Travel Review
+
+```bash
+# See all your locations
+python3 scripts/location_mapper.py --human
+
+# Focus on trips from a specific year
+python3 scripts/location_mapper.py --year 2025 --human
+
+# What content you shot at those places
+python3 scripts/scene_search.py --human
+```
+
+### Workflow 8: People Deep Dive
+
+```bash
+# Who's in your photos
+python3 scripts/people_analyzer.py --human
+
+# Find hidden gems of specific people
+python3 scripts/best_photos.py --hidden-gems --human
 ```
 
 ## Tips for AI Assistants
@@ -466,6 +959,31 @@ python3 scripts/smart_export.py --output-dir ~/Desktop/Photos-Export --favorites
 2. **Identify hogs** — Call out the biggest files/categories
 3. **Show trends** — "You're adding about 1.5 GB per month"
 4. **Suggest actions** — "Deleting old screenshots could free up 2 GB"
+
+### When User Asks About Best/Favorite Photos
+
+1. **Use best_photos** — Shows quality distribution and top picks
+2. **Highlight hidden gems** — Use --hidden-gems to find unfavorited great shots
+3. **Show scores** — Explain what makes a photo high quality (composition, lighting, etc.)
+
+### When User Asks About People
+
+1. **Use people_analyzer** — Comprehensive people stats
+2. **Show co-occurrences** — "Jonah and Silas appear together in 2,100 photos"
+3. **Show trends** — "You photographed Jonah 40% less in 2025"
+
+### When User Asks "On This Day" / Memories
+
+1. **Use on_this_day** — Perfect for nostalgia
+2. **Narrate warmly** — Tell the story of each year
+3. **Suggest window** — If nothing found, suggest --window 2 for nearby dates
+
+### When User Wants to Actually Delete
+
+1. **Always preview first** — Run cleanup_executor without --execute
+2. **Show counts and sizes** — "287 old screenshots, 2.1 GB"
+3. **Explain safety** — Items go to Recently Deleted, recoverable for 30 days
+4. **Get confirmation** — Never auto-execute cleanup
 
 ### Output Format Guidance
 
@@ -514,12 +1032,14 @@ python3 scripts/smart_export.py --output-dir ~/Desktop/Photos-Export --favorites
 ## Future Enhancements
 
 Ideas for future expansion:
-- Actual AppleScript export implementation
-- Batch delete via AppleScript (with confirmation)
-- Photo face recognition quality analysis
+- Actual AppleScript export implementation (smart_export)
 - Live Photo vs still comparison
 - Shared library analysis
 - iCloud sync status integration
+- Reverse geocoding for location names
+- Photo similarity detection (beyond exact duplicates)
+- Seasonal photo collage generation
+- Face quality scoring per person
 
 ---
 

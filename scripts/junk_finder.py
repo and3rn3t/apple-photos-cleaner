@@ -112,8 +112,8 @@ def find_junk(
                     'size': size,
                     'size_formatted': format_size(size),
                     'quality_score': round(quality, 3),
-                    'failure_score': row.get('ZFAILURESCORE'),
-                    'noise_score': row.get('ZNOISESCORE'),
+                    'failure_score': dict(row).get('ZFAILURESCORE'),
+                    'noise_score': dict(row).get('ZNOISESCORE'),
                 })
         
         # 3. Burst leftovers (non-picked burst photos)
