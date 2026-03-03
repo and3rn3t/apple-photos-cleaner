@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, datetime_to_coredata, format_date_range, output_json
+from _common import PhotosDB, coredata_to_datetime, datetime_to_coredata, detect_face_schema, format_date_range, output_json
 
 
 def generate_timeline(
@@ -32,6 +32,7 @@ def generate_timeline(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        schema = detect_face_schema(cursor)
 
         # Build date filters
         where_clauses = ["a.ZTRASHEDSTATE != 1"]
@@ -139,10 +140,10 @@ def generate_timeline(
                 placeholders = ",".join("?" * len(photo_ids))
                 cursor.execute(
                     f"""
-                    SELECT DISTINCT p.ZFULLNAME, COUNT(df.ZASSET) as count
+                    SELECT DISTINCT p.ZFULLNAME, COUNT(df.{schema['asset_fk']}) as count
                     FROM ZPERSON p
-                    JOIN ZDETECTEDFACE df ON p.Z_PK = df.ZPERSON
-                    WHERE df.ZASSET IN ({placeholders})
+                    JOIN ZDETECTEDFACE df ON p.Z_PK = df.{schema['person_fk']}
+                    WHERE df.{schema['asset_fk']} IN ({placeholders})
                     GROUP BY p.Z_PK
                     ORDER BY count DESC
                 """,

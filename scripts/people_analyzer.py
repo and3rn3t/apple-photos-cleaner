@@ -8,7 +8,7 @@ import sys
 from collections import defaultdict
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, get_quality_score, run_script
+from _common import PhotosDB, coredata_to_datetime, detect_face_schema, get_quality_score, run_script
 
 
 def analyze_people(
@@ -29,18 +29,19 @@ def analyze_people(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        schema = detect_face_schema(cursor)
 
         # Get all named people with face counts
         cursor.execute(
-            """
+            f"""
             SELECT
                 p.Z_PK as person_id,
                 p.ZFULLNAME as name,
                 p.ZFACECOUNT as face_count,
-                COUNT(DISTINCT df.ZASSET) as photo_count
+                COUNT(DISTINCT df.{schema['asset_fk']}) as photo_count
             FROM ZPERSON p
-            JOIN ZDETECTEDFACE df ON p.Z_PK = df.ZPERSON
-            JOIN ZASSET a ON df.ZASSET = a.Z_PK
+            JOIN ZDETECTEDFACE df ON p.Z_PK = df.{schema['person_fk']}
+            JOIN ZASSET a ON df.{schema['asset_fk']} = a.Z_PK
             WHERE p.ZFULLNAME IS NOT NULL
             AND p.ZFULLNAME != ''
             AND a.ZTRASHEDSTATE != 1
@@ -63,11 +64,11 @@ def analyze_people(
             )
 
         # Get unnamed face count
-        cursor.execute("""
-            SELECT COUNT(DISTINCT df.ZASSET) as count
+        cursor.execute(f"""
+            SELECT COUNT(DISTINCT df.{schema['asset_fk']}) as count
             FROM ZDETECTEDFACE df
-            JOIN ZASSET a ON df.ZASSET = a.Z_PK
-            WHERE (df.ZPERSON IS NULL OR df.ZPERSON NOT IN (
+            JOIN ZASSET a ON df.{schema['asset_fk']} = a.Z_PK
+            WHERE (df.{schema['person_fk']} IS NULL OR df.{schema['person_fk']} NOT IN (
                 SELECT Z_PK FROM ZPERSON WHERE ZFULLNAME IS NOT NULL AND ZFULLNAME != ''
             ))
             AND a.ZTRASHEDSTATE != 1
@@ -81,13 +82,13 @@ def analyze_people(
 
             # Photos by year
             cursor.execute(
-                """
+                f"""
                 SELECT
                     strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) as year,
                     COUNT(*) as count
                 FROM ZASSET a
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.ZASSET
-                WHERE df.ZPERSON = ?
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
+                WHERE df.{schema['person_fk']} = ?
                 AND a.ZTRASHEDSTATE != 1
                 GROUP BY year
                 ORDER BY year
@@ -98,7 +99,7 @@ def analyze_people(
 
             # Best photo (highest quality score)
             cursor.execute(
-                """
+                f"""
                 SELECT
                     a.Z_PK,
                     a.ZFILENAME,
@@ -109,9 +110,9 @@ def analyze_people(
                     ca.ZPLEASANTCOMPOSITIONSCORE,
                     ca.ZPLEASANTLIGHTINGSCORE
                 FROM ZASSET a
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.ZASSET
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
                 LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
-                WHERE df.ZPERSON = ?
+                WHERE df.{schema['person_fk']} = ?
                 AND a.ZTRASHEDSTATE != 1
                 AND a.ZKIND = 0
                 ORDER BY ca.ZPLEASANTCOMPOSITIONSCORE DESC NULLS LAST
@@ -136,11 +137,11 @@ def analyze_people(
 
             # Favorites count
             cursor.execute(
-                """
+                f"""
                 SELECT COUNT(*) as count
                 FROM ZASSET a
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.ZASSET
-                WHERE df.ZPERSON = ?
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
+                WHERE df.{schema['person_fk']} = ?
                 AND a.ZTRASHEDSTATE != 1
                 AND a.ZFAVORITE = 1
             """,
@@ -150,13 +151,13 @@ def analyze_people(
 
             # Date range
             cursor.execute(
-                """
+                f"""
                 SELECT
                     MIN(a.ZDATECREATED) as first,
                     MAX(a.ZDATECREATED) as last
                 FROM ZASSET a
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.ZASSET
-                WHERE df.ZPERSON = ?
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
+                WHERE df.{schema['person_fk']} = ?
                 AND a.ZTRASHEDSTATE != 1
             """,
                 (pid,),
@@ -185,12 +186,12 @@ def analyze_people(
             # Find photos with multiple named people
             cursor.execute(
                 f"""
-                SELECT df.ZASSET, df.ZPERSON
+                SELECT df.{schema['asset_fk']} as asset_id, df.{schema['person_fk']} as person_id
                 FROM ZDETECTEDFACE df
-                JOIN ZASSET a ON df.ZASSET = a.Z_PK
-                WHERE df.ZPERSON IN ({placeholders})
+                JOIN ZASSET a ON df.{schema['asset_fk']} = a.Z_PK
+                WHERE df.{schema['person_fk']} IN ({placeholders})
                 AND a.ZTRASHEDSTATE != 1
-                ORDER BY df.ZASSET
+                ORDER BY df.{schema['asset_fk']}
             """,
                 person_ids,
             )
@@ -198,7 +199,7 @@ def analyze_people(
             # Group by photo
             photo_people = defaultdict(set)
             for row in cursor.fetchall():
-                photo_people[row["ZASSET"]].add(row["ZPERSON"])
+                photo_people[row["asset_id"]].add(row["person_id"])
 
             # Count co-occurrences
             for _asset_id, person_set in photo_people.items():

@@ -77,8 +77,8 @@ def create_full_test_db():
 
     cursor.execute("""
         CREATE TABLE ZDETECTEDFACE (
-            ZASSET INTEGER,
-            ZPERSON INTEGER
+            ZASSETFORFACE INTEGER,
+            ZPERSONFORFACE INTEGER
         )
     """)
 
@@ -130,8 +130,8 @@ def create_full_test_db():
     )
     cursor.execute("INSERT INTO ZADDITIONALASSETATTRIBUTES VALUES (1, 5000000, 4032, 3024)")
     cursor.execute("INSERT INTO ZCOMPUTEDASSETATTRIBUTES VALUES (1, 0.05, 0.1, 0.95, 0.9, 0.8, 0.85, 0.7, 0.6, 0.88)")
-    cursor.execute("INSERT INTO ZDETECTEDFACE VALUES (1, 1)")
-    cursor.execute("INSERT INTO ZDETECTEDFACE VALUES (1, 2)")
+    cursor.execute("INSERT INTO ZDETECTEDFACE (ZASSETFORFACE, ZPERSONFORFACE) VALUES (1, 1)")
+    cursor.execute("INSERT INTO ZDETECTEDFACE (ZASSETFORFACE, ZPERSONFORFACE) VALUES (1, 2)")
     cursor.execute("INSERT INTO ZSCENECLASSIFICATION VALUES (1, 'beach', 0.9)")
     cursor.execute("INSERT INTO ZSCENECLASSIFICATION VALUES (1, 'outdoor', 0.8)")
     cursor.execute("INSERT INTO Z_27ASSETS VALUES (1, 1)")
@@ -150,7 +150,7 @@ def create_full_test_db():
     )
     cursor.execute("INSERT INTO ZADDITIONALASSETATTRIBUTES VALUES (2, 4500000, 4032, 3024)")
     cursor.execute("INSERT INTO ZCOMPUTEDASSETATTRIBUTES VALUES (2, 0.1, 0.15, 0.85, 0.8, 0.7, 0.75, 0.65, 0.5, 0.78)")
-    cursor.execute("INSERT INTO ZDETECTEDFACE VALUES (2, 1)")
+    cursor.execute("INSERT INTO ZDETECTEDFACE (ZASSETFORFACE, ZPERSONFORFACE) VALUES (2, 1)")
     cursor.execute("INSERT INTO ZSCENECLASSIFICATION VALUES (2, 'portrait', 0.85)")
     cursor.execute("INSERT INTO Z_27ASSETS VALUES (1, 2)")
 
@@ -247,7 +247,7 @@ def create_full_test_db():
     )
     cursor.execute("INSERT INTO ZADDITIONALASSETATTRIBUTES VALUES (9, 3500000, 4032, 3024)")
     cursor.execute("INSERT INTO ZCOMPUTEDASSETATTRIBUTES VALUES (9, 0.2, 0.3, 0.7, 0.65, 0.5, 0.5, 0.5, 0.4, 0.6)")
-    cursor.execute("INSERT INTO ZDETECTEDFACE VALUES (9, 1)")
+    cursor.execute("INSERT INTO ZDETECTEDFACE (ZASSETFORFACE, ZPERSONFORFACE) VALUES (9, 1)")
     cursor.execute("INSERT INTO ZSCENECLASSIFICATION VALUES (9, 'dog', 0.7)")
 
     conn.commit()

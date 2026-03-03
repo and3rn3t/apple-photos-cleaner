@@ -9,7 +9,7 @@ import sys
 from collections import defaultdict
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, format_size, run_script, validate_year
+from _common import PhotosDB, coredata_to_datetime, detect_face_schema, format_size, run_script, validate_year
 
 # ---------------------------------------------------------------------------
 # Offline reverse geocoding: maps lat/lon to approximate place names using
@@ -224,6 +224,7 @@ def analyze_locations(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        schema = detect_face_schema(cursor)
 
         where_clauses = [
             "a.ZTRASHEDSTATE != 1",
@@ -323,10 +324,10 @@ def analyze_locations(
                 placeholders = ",".join("?" * len(photo_ids))
                 cursor.execute(
                     f"""
-                    SELECT DISTINCT p.ZFULLNAME, COUNT(df.ZASSET) as count
+                    SELECT DISTINCT p.ZFULLNAME, COUNT(df.{schema['asset_fk']}) as count
                     FROM ZPERSON p
-                    JOIN ZDETECTEDFACE df ON p.Z_PK = df.ZPERSON
-                    WHERE df.ZASSET IN ({placeholders})
+                    JOIN ZDETECTEDFACE df ON p.Z_PK = df.{schema['person_fk']}
+                    WHERE df.{schema['asset_fk']} IN ({placeholders})
                     AND p.ZFULLNAME IS NOT NULL AND p.ZFULLNAME != ''
                     GROUP BY p.Z_PK
                     ORDER BY count DESC
