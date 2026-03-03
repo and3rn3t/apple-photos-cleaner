@@ -1,6 +1,6 @@
 ---
 name: apple-photos-cleaner
-description: Analyze, clean up, and organize Apple Photos libraries. Find and report junk photos (screenshots, low-quality, burst leftovers, duplicates), analyze storage usage, generate photo timeline recaps, and plan smart exports. All operations are READ-ONLY on the database (safe). Trigger on: Photos cleanup, photo storage, duplicate photos, junk photos, screenshot cleanup, Photos analysis, photo timeline, photo export, Photos library stats, burst cleanup, storage hogs, photo organization.
+description: Analyze, clean up, and organize Apple Photos libraries. Find and report junk photos (screenshots, low-quality, burst leftovers, duplicates), analyze storage usage, generate photo timeline recaps, plan smart exports, analyze Live Photos, check iCloud sync, audit shared libraries, detect similar photos, curate seasonal highlights, and score face quality. All analysis operations are READ-ONLY on the database (safe). Trigger on: Photos cleanup, photo storage, duplicate photos, junk photos, screenshot cleanup, Photos analysis, photo timeline, photo export, Photos library stats, burst cleanup, storage hogs, photo organization, Live Photos, iCloud sync, shared library, similar photos, seasonal highlights, face quality, portraits.
 ---
 
 # Apple Photos Cleaner
@@ -16,15 +16,21 @@ Apple Photos is great at organizing and syncing photos, but it's not so great at
 - **Duplicate Finder** — Find duplicates using Apple's detection + timestamp/dimension matching
 - **Storage Analyzer** — Detailed breakdown by year, type, file format, growth trends, storage hogs
 - **Timeline Recap** — Generate narrative summaries of photo activity for any date range
-- **Smart Export** — Plan organized exports by year/month, person, album, or location
+- **Smart Export** — Plan organized exports by year/month, person, album, or location; AppleScript export
 - **Best Photos / Hidden Gems** — Surface high-quality photos you haven't favorited
 - **People Analyzer** — Deep analysis of people: co-occurrence, trends over time, best photos per person
-- **Location Mapper** — Cluster GPS coordinates into locations, identify trips, travel timelines
+- **Location Mapper** — Cluster GPS coordinates into locations, identify trips, offline reverse geocoding
 - **Scene Search** — Search by ML-detected content (beach, dog, food) or generate content inventory
 - **Photo Habits** — Behavioral analytics: time-of-day, day-of-week, streaks, seasonal trends
 - **On This Day** — See what you photographed on today's date in prior years
 - **Album Auditor** — Find orphan photos, empty albums, overlap between albums
 - **Cleanup Executor** — Batch move junk to trash via AppleScript with confirmation
+- **Live Photo Analyzer** — Compare Live Photos vs stills, find conversion candidates, storage impact
+- **Shared Library** — Analyze Shared Library vs personal: contributors, content splits, storage
+- **iCloud Status** — Check iCloud sync coverage: synced vs local-only, large unsynced items
+- **Similarity Finder** — Detect visually similar photos using computed quality feature vectors
+- **Seasonal Highlights** — Curate the best photos per season using quality scores and favorites
+- **Face Quality Scoring** — Rank face photos per person: find best/worst portraits
 
 **Safety:** All operations are READ-ONLY database queries. No photos are modified or deleted without explicit user action.
 
@@ -48,6 +54,12 @@ Use when users mention:
 - "On this day" / photo memories from past years
 - Album organization, orphan photos, album cleanup
 - Actually deleting junk photos (batch cleanup)
+- Live Photos analysis, converting Live Photos to stills
+- Shared Library content, who contributed what
+- iCloud sync status, unsynced photos, cloud coverage
+- Finding similar-looking photos
+- Seasonal photo highlights, best of each season
+- Face/portrait quality, best/worst portraits per person
 
 ## Quick Start
 
@@ -813,6 +825,136 @@ python3 scripts/cleanup_executor.py --category burst_leftovers --execute
 
 ---
 
+### 15. Live Photo Analyzer
+
+Analyze Live Photos vs still photos: identify Live Photos, compare storage impact, find Live Photos that could be converted to stills to save space.
+
+```bash
+python3 scripts/live_photo_analyzer.py [--human] [--year YYYY] [--output FILE]
+```
+
+**Options:**
+- `--year YYYY` — Filter to specific year
+- `--human` — Human-readable summary
+- `--output FILE` — Write JSON to file
+
+**What it reports:**
+- Total Live Photos vs stills (count and storage)
+- Playback style breakdown (live, loop, bounce, long exposure)
+- Year-over-year Live Photo trends
+- Estimated savings if Live Photos were converted to stills (~50% of video component)
+- Unfavorited Live Photos as conversion candidates
+- Largest Live Photos (biggest savings first)
+
+---
+
+### 16. Shared Library Analysis
+
+Analyze the Shared Library in Apple Photos: personal vs shared content, contributor breakdown, storage impact.
+
+```bash
+python3 scripts/shared_library.py [--human] [--output FILE]
+```
+
+**What it reports:**
+- Whether Shared Library is enabled
+- Personal vs shared asset counts and storage
+- Contributor identifiers and their contributions
+- Shared content by year and monthly trends
+- Photo/video split for shared content
+
+**Note:** Requires macOS 13+ / iOS 16+ database format for Shared Library columns.
+
+---
+
+### 17. iCloud Sync Status
+
+Check iCloud sync coverage across the library: synced vs local-only, download status, large unsynced items.
+
+```bash
+python3 scripts/icloud_status.py [--human] [--output FILE]
+```
+
+**What it reports:**
+- Sync coverage percentage (synced vs local-only)
+- Storage breakdown by sync state
+- Photo vs video sync comparison
+- Year-over-year sync trends
+- Large local-only items (>10 MB) that aren't synced
+- My assets vs others' assets
+- Downloadable (cloud-only) item count
+
+---
+
+### 18. Photo Similarity Detection
+
+Find visually similar photos beyond exact duplicates using computed quality feature vectors (composition, lighting, color, patterns, etc.).
+
+```bash
+python3 scripts/similarity_finder.py [--threshold 0.95] [--year YYYY] [--limit 500] [--human]
+```
+
+**Options:**
+- `--threshold` — Cosine similarity threshold 0-1 (default: 0.95, very similar)
+- `--year YYYY` — Filter to specific year
+- `--limit N` — Max photos to compare (default: 500, controls runtime)
+- `--human` — Human-readable summary
+
+**What it reports:**
+- Groups of visually similar photos
+- Potential storage savings per group
+- Keep candidate (largest/highest quality in each group)
+- Total extra (removable) similar photos
+
+**Runtime note:** O(n²) comparison; use `--limit` to control runtime for large libraries.
+
+---
+
+### 19. Seasonal Highlights
+
+Curate the best photos from each season using quality scores, favorites, and scene context.
+
+```bash
+python3 scripts/seasonal_highlights.py [--year YYYY] [--top 20] [--southern] [--human]
+```
+
+**Options:**
+- `--year YYYY` — Filter to specific year
+- `--top N` — Top N photos per season (default: 20)
+- `--southern` — Use Southern Hemisphere season definitions
+- `--human` — Human-readable summary
+
+**What it reports:**
+- Best photos per season (spring, summer, fall, winter)
+- Season-by-season quality scores and favorite counts
+- Year-over-season distribution matrix
+- Busiest season identification
+- Best single photo per season
+
+---
+
+### 20. Face Quality Scoring
+
+Score face quality per person using Apple Photos' face detection attributes: quality measure, blur, yaw angle, smile, face size, and center position.
+
+```bash
+python3 scripts/face_quality.py [--person NAME] [--top 10] [--human]
+```
+
+**Options:**
+- `--person NAME` — Filter to specific person name
+- `--top N` — Top N best/worst per person (default: 10)
+- `--human` — Human-readable summary
+
+**What it reports:**
+- Per-person face quality rankings
+- Best and worst portraits per person
+- Composite face score (quality, blur, size, yaw, smile, center)
+- Overall library face quality average
+- Most photographed person, highest quality person
+
+---
+
 ## Database Schema Reference
 
 Detailed schema documentation is in `references/database-schema.md`. Key tables:
@@ -934,6 +1076,45 @@ python3 scripts/people_analyzer.py --human
 
 # Find hidden gems of specific people
 python3 scripts/best_photos.py --hidden-gems --human
+
+# Best and worst portraits per person
+python3 scripts/face_quality.py --human
+```
+
+### Workflow 9: Live Photo & Storage Optimization
+
+```bash
+# Analyze Live Photos vs stills
+python3 scripts/live_photo_analyzer.py --human
+
+# Find similar photos (potential duplicates)
+python3 scripts/similarity_finder.py --threshold 0.95 --human
+
+# Check iCloud sync status
+python3 scripts/icloud_status.py --human
+```
+
+### Workflow 10: Seasonal Year in Review
+
+```bash
+# Get seasonal highlights
+python3 scripts/seasonal_highlights.py --year 2024 --human
+
+# Location review with place names
+python3 scripts/location_mapper.py --year 2024 --human
+
+# Photo habits for the year
+python3 scripts/photo_habits.py --year 2024 --human
+```
+
+### Workflow 11: Shared Library Audit
+
+```bash
+# Check shared library status
+python3 scripts/shared_library.py --human
+
+# See who contributed what and storage impact
+python3 scripts/shared_library.py --output shared_report.json
 ```
 
 ## Tips for AI Assistants
@@ -1005,13 +1186,16 @@ python3 scripts/best_photos.py --hidden-gems --human
 - ✅ **All operations are READ-ONLY** — No photos are modified or deleted
 - ✅ **No external dependencies** — Pure Python stdlib
 - ✅ **No Photos.app API** — Direct SQLite reads (safe)
-- ⚠️ **Smart export uses AppleScript** — Would require Photos.app permissions (not implemented yet)
+- ⚠️ **Smart export uses AppleScript** — Requires Photos.app to be running
+- ⚠️ **Cleanup executor uses AppleScript** — Moves items to Recently Deleted (recoverable)
 
 ## Limitations
 
-- **Read-only** — Scripts identify candidates, but cleanup must be done manually in Photos.app
-- **No actual deletion** — Scripts don't delete anything, they just report
-- **Export is placeholder** — AppleScript export logic not fully implemented
+- **Read-only analysis** — Scripts identify candidates, but cleanup must be confirmed by user
+- **Export via AppleScript** — Requires Photos.app to be running
+- **Reverse geocoding** — Offline lookup covers ~100 major world cities; remote locations show coordinates
+- **Similarity detection** — Uses computed quality vectors (not pixel-level); O(n²) comparison limited by `--limit`
+- **Shared Library columns** — Requires macOS 13+ / iOS 16+ database format
 - **Empty library support** — Scripts work on any library, but Matt's Mac mini library is empty (synced elsewhere)
 - **Schema changes** — Apple may change database schema in future macOS versions
 
@@ -1031,15 +1215,13 @@ python3 scripts/best_photos.py --hidden-gems --human
 
 ## Future Enhancements
 
-Ideas for future expansion:
-- Actual AppleScript export implementation (smart_export)
-- Live Photo vs still comparison
-- Shared library analysis
-- iCloud sync status integration
-- Reverse geocoding for location names
-- Photo similarity detection (beyond exact duplicates)
-- Seasonal photo collage generation
-- Face quality scoring per person
+All previously planned features have been implemented! Possible further expansions:
+- Machine learning model export for custom photo classifiers
+- Photo deduplication across multiple Photos libraries
+- Integration with external photo services (Google Photos, Flickr)
+- Time-lapse generation from photo sequences
+- Custom smart album rule builder
+- Photo metadata repair / bulk editing suggestions
 
 ---
 

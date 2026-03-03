@@ -180,12 +180,12 @@ def generate_export_plan(
         return plan
 
 
-def export_with_applescript(asset_ids: list[int], output_dir: str, folder_name: str = "") -> bool:
+def export_with_applescript(filenames: list[str], output_dir: str, folder_name: str = "") -> bool:
     """
-    Use AppleScript to export photos from Photos.app.
+    Use AppleScript to export photos from Photos.app by filename.
 
     Args:
-        asset_ids: List of asset IDs to export
+        filenames: List of filenames to export
         output_dir: Base output directory
         folder_name: Subfolder name (if organizing)
 
@@ -200,28 +200,48 @@ def export_with_applescript(asset_ids: list[int], output_dir: str, folder_name: 
 
     Path(export_path).mkdir(parents=True, exist_ok=True)
 
-    # Convert asset IDs to string list
-    ", ".join(str(id) for id in asset_ids)
+    # Build AppleScript that searches by filename, then exports matches.
+    # Photos.app doesn't expose Z_PK, so we match by filename (same
+    # pattern used in cleanup_executor.py for delete).
+    escaped_path = export_path.replace('"', '\\"')
+    file_match_blocks = []
+    for fn in filenames:
+        escaped = fn.replace('"', '\\"').replace("\\", "\\\\")
+        file_match_blocks.append(
+            f'        set targetName to "{escaped}"\n'
+            f"        set matchedItems to (search for targetName)\n"
+            f"        repeat with anItem in matchedItems\n"
+            f"            if filename of anItem is targetName then\n"
+            f"                copy anItem to end of toExport\n"
+            f"            end if\n"
+            f"        end repeat"
+        )
 
-    # AppleScript to export photos
-    # Note: This is a simplified version. Real implementation would need
-    # to map Z_PK to Photos.app media items, which is complex.
-    applescript = f"""
-    tell application "Photos"
-        -- Note: This is a placeholder. Actual implementation requires
-        -- mapping database Z_PK to Photos.app media items.
-        -- This would typically involve:
-        -- 1. Getting all media items
-        -- 2. Matching by filename/date
-        -- 3. Exporting matched items
-
-        display dialog "Export not yet implemented. This would export to: {export_path}"
-    end tell
-    """
+    search_code = "\n".join(file_match_blocks)
+    applescript = (
+        'tell application "Photos"\n'
+        "    set toExport to {}\n"
+        f"{search_code}\n"
+        f'    set destFolder to POSIX file "{escaped_path}" as alias\n'
+        "    if (count of toExport) > 0 then\n"
+        "        export toExport to destFolder\n"
+        "    end if\n"
+        "end tell"
+    )
 
     try:
-        result = subprocess.run(["osascript", "-e", applescript], capture_output=True, text=True, timeout=300)
+        result = subprocess.run(
+            ["osascript", "-e", applescript],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if result.returncode != 0:
+            print(f"  AppleScript error: {result.stderr.strip()}", file=sys.stderr)
         return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        print("  Export timed out (>600 s)", file=sys.stderr)
+        return False
     except Exception as e:
         print(f"Error running AppleScript: {e}", file=sys.stderr)
         return False
@@ -304,9 +324,9 @@ Note: Actual export requires Photos.app and proper permissions.
 
         for folder_name, folder_info in plan["folders"].items():
             print(f"Exporting {folder_name}... ", end="", flush=True)
-            asset_ids = [item["id"] for item in folder_info["items"]]
+            filenames = [item["filename"] for item in folder_info["items"]]
 
-            success = export_with_applescript(asset_ids, args.output_dir, folder_name)
+            success = export_with_applescript(filenames, args.output_dir, folder_name)
 
             if success:
                 print("✓")
@@ -314,8 +334,7 @@ Note: Actual export requires Photos.app and proper permissions.
                 print("✗ (failed)")
 
         print()
-        print("Note: AppleScript export is not fully implemented.")
-        print("This is a placeholder that shows the structure.")
+        print("Export complete.")
 
         return 0
 

@@ -12,6 +12,136 @@ from typing import Any, Optional
 
 from _common import PhotosDB, coredata_to_datetime, format_size, output_json
 
+# ---------------------------------------------------------------------------
+# Offline reverse geocoding: maps lat/lon to approximate place names using
+# a small set of well-known cities / regions worldwide.  Each entry is
+#   (lat, lon, name, country)
+# We find the nearest city within a threshold distance.
+# ---------------------------------------------------------------------------
+KNOWN_PLACES: list[tuple[float, float, str, str]] = [
+    # North America
+    (40.7128, -74.0060, "New York", "US"),
+    (34.0522, -118.2437, "Los Angeles", "US"),
+    (41.8781, -87.6298, "Chicago", "US"),
+    (29.7604, -95.3698, "Houston", "US"),
+    (33.4484, -112.0740, "Phoenix", "US"),
+    (29.4241, -98.4936, "San Antonio", "US"),
+    (32.7157, -117.1611, "San Diego", "US"),
+    (32.7767, -96.7970, "Dallas", "US"),
+    (37.7749, -122.4194, "San Francisco", "US"),
+    (47.6062, -122.3321, "Seattle", "US"),
+    (39.7392, -104.9903, "Denver", "US"),
+    (25.7617, -80.1918, "Miami", "US"),
+    (33.7490, -84.3880, "Atlanta", "US"),
+    (42.3601, -71.0589, "Boston", "US"),
+    (38.9072, -77.0369, "Washington DC", "US"),
+    (36.1627, -86.7816, "Nashville", "US"),
+    (30.2672, -97.7431, "Austin", "US"),
+    (36.1699, -115.1398, "Las Vegas", "US"),
+    (45.5152, -122.6784, "Portland", "US"),
+    (35.2271, -80.8431, "Charlotte", "US"),
+    (21.3069, -157.8583, "Honolulu", "US"),
+    (43.6532, -79.3832, "Toronto", "CA"),
+    (45.5017, -73.5673, "Montreal", "CA"),
+    (49.2827, -123.1207, "Vancouver", "CA"),
+    (19.4326, -99.1332, "Mexico City", "MX"),
+    (20.6597, -103.3496, "Guadalajara", "MX"),
+    (25.6866, -100.3161, "Monterrey", "MX"),
+    # Europe
+    (51.5074, -0.1278, "London", "GB"),
+    (48.8566, 2.3522, "Paris", "FR"),
+    (52.5200, 13.4050, "Berlin", "DE"),
+    (48.1351, 11.5820, "Munich", "DE"),
+    (50.1109, 8.6821, "Frankfurt", "DE"),
+    (41.9028, 12.4964, "Rome", "IT"),
+    (45.4642, 9.1900, "Milan", "IT"),
+    (43.7696, 11.2558, "Florence", "IT"),
+    (40.4168, -3.7038, "Madrid", "ES"),
+    (41.3874, 2.1686, "Barcelona", "ES"),
+    (52.3676, 4.9041, "Amsterdam", "NL"),
+    (50.8503, 4.3517, "Brussels", "BE"),
+    (47.3769, 8.5417, "Zurich", "CH"),
+    (46.2044, 6.1432, "Geneva", "CH"),
+    (48.2082, 16.3738, "Vienna", "AT"),
+    (50.0755, 14.4378, "Prague", "CZ"),
+    (52.2297, 21.0122, "Warsaw", "PL"),
+    (47.4979, 19.0402, "Budapest", "HU"),
+    (59.3293, 18.0686, "Stockholm", "SE"),
+    (60.1699, 24.9384, "Helsinki", "FI"),
+    (55.6761, 12.5683, "Copenhagen", "DK"),
+    (59.9139, 10.7522, "Oslo", "NO"),
+    (38.7223, -9.1393, "Lisbon", "PT"),
+    (37.9838, 23.7275, "Athens", "GR"),
+    (41.0082, 28.9784, "Istanbul", "TR"),
+    (55.7558, 37.6173, "Moscow", "RU"),
+    (59.9311, 30.3609, "St Petersburg", "RU"),
+    (53.3498, -6.2603, "Dublin", "IE"),
+    (55.9533, -3.1883, "Edinburgh", "GB"),
+    # Asia
+    (35.6762, 139.6503, "Tokyo", "JP"),
+    (34.6937, 135.5023, "Osaka", "JP"),
+    (35.0116, 135.7681, "Kyoto", "JP"),
+    (37.5665, 126.9780, "Seoul", "KR"),
+    (31.2304, 121.4737, "Shanghai", "CN"),
+    (39.9042, 116.4074, "Beijing", "CN"),
+    (22.3193, 114.1694, "Hong Kong", "HK"),
+    (22.5431, 114.0579, "Shenzhen", "CN"),
+    (23.1291, 113.2644, "Guangzhou", "CN"),
+    (25.0330, 121.5654, "Taipei", "TW"),
+    (1.3521, 103.8198, "Singapore", "SG"),
+    (13.7563, 100.5018, "Bangkok", "TH"),
+    (14.5995, 120.9842, "Manila", "PH"),
+    (21.0278, 105.8342, "Hanoi", "VN"),
+    (10.8231, 106.6297, "Ho Chi Minh City", "VN"),
+    (3.1390, 101.6869, "Kuala Lumpur", "MY"),
+    (-6.2088, 106.8456, "Jakarta", "ID"),
+    (28.6139, 77.2090, "New Delhi", "IN"),
+    (19.0760, 72.8777, "Mumbai", "IN"),
+    (12.9716, 77.5946, "Bangalore", "IN"),
+    (25.2048, 55.2708, "Dubai", "AE"),
+    (24.7136, 46.6753, "Riyadh", "SA"),
+    (31.7683, 35.2137, "Jerusalem", "IL"),
+    (32.0853, 34.7818, "Tel Aviv", "IL"),
+    # Oceania
+    (-33.8688, 151.2093, "Sydney", "AU"),
+    (-37.8136, 144.9631, "Melbourne", "AU"),
+    (-27.4698, 153.0251, "Brisbane", "AU"),
+    (-36.8485, 174.7633, "Auckland", "NZ"),
+    # South America
+    (-23.5505, -46.6333, "São Paulo", "BR"),
+    (-22.9068, -43.1729, "Rio de Janeiro", "BR"),
+    (-34.6037, -58.3816, "Buenos Aires", "AR"),
+    (-33.4489, -70.6693, "Santiago", "CL"),
+    (-12.0464, -77.0428, "Lima", "PE"),
+    (4.7110, -74.0721, "Bogota", "CO"),
+    # Africa
+    (30.0444, 31.2357, "Cairo", "EG"),
+    (-33.9249, 18.4241, "Cape Town", "ZA"),
+    (-1.2921, 36.8219, "Nairobi", "KE"),
+    (6.5244, 3.3792, "Lagos", "NG"),
+    (33.5731, -7.5898, "Casablanca", "MA"),
+]
+
+# Match threshold: max distance in km to assign a place name
+REVERSE_GEO_THRESHOLD_KM = 50
+
+
+def reverse_geocode(lat: float, lon: float) -> Optional[str]:
+    """
+    Offline reverse geocode: return "City, Country" for a coordinate,
+    or None if no known place is within the threshold distance.
+    """
+    best_dist = float("inf")
+    best_name = None
+    for plat, plon, city, country in KNOWN_PLACES:
+        dist = haversine_km(lat, lon, plat, plon)
+        if dist < best_dist:
+            best_dist = dist
+            best_name = f"{city}, {country}"
+    if best_dist <= REVERSE_GEO_THRESHOLD_KM:
+        return best_name
+    return None
+
 
 # Haversine distance in km
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -204,10 +334,13 @@ def analyze_locations(
                 )
                 people_at_location = [{"name": row["ZFULLNAME"], "count": row["count"]} for row in cursor.fetchall()]
 
+            place_name = reverse_geocode(cluster["centroid_lat"], cluster["centroid_lon"])
+
             locations.append(
                 {
                     "centroid_lat": cluster["centroid_lat"],
                     "centroid_lon": cluster["centroid_lon"],
+                    "place_name": place_name,
                     "photo_count": cluster["photo_count"],
                     "favorites": favorites,
                     "total_size": total_size,
@@ -258,7 +391,8 @@ def format_summary(data: dict[str, Any]) -> str:
     for i, loc in enumerate(data["locations"][:15], 1):
         trip_flag = " 🧳" if loc["is_trip"] else ""
         fav_str = f" ⭐{loc['favorites']}" if loc["favorites"] else ""
-        lines.append(f"  {i:>3}. ({loc['centroid_lat']}, {loc['centroid_lon']})")
+        place = loc.get("place_name") or f"({loc['centroid_lat']}, {loc['centroid_lon']})"
+        lines.append(f"  {i:>3}. {place}")
         lines.append(f"       {loc['photo_count']:,} photos{fav_str}{trip_flag} | {loc['total_size_formatted']}")
 
         if loc["first_photo"] and loc["last_photo"]:
@@ -273,7 +407,8 @@ def format_summary(data: dict[str, Any]) -> str:
     if data["trips"]:
         lines.append("Identified Trips:")
         for trip in data["trips"][:10]:
-            lines.append(f"  🧳 ({trip['centroid_lat']}, {trip['centroid_lon']})")
+            place = trip.get("place_name") or f"({trip['centroid_lat']}, {trip['centroid_lon']})"
+            lines.append(f"  🧳 {place}")
             lines.append(f"     {trip['photo_count']} photos, {trip['first_photo'][:10]} → {trip['last_photo'][:10]}")
         lines.append("")
 
