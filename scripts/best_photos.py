@@ -7,7 +7,15 @@ Surface overlooked great shots using Apple's computed quality scores.
 import sys
 from typing import Any, Optional
 
-from _common import PhotosDB, build_asset_query, coredata_to_datetime, format_size, get_quality_score, run_script
+from _common import (
+    PhotosDB,
+    build_asset_query,
+    coredata_to_datetime,
+    format_size,
+    get_quality_score,
+    run_script,
+    validate_year,
+)
 
 
 def find_best_photos(
@@ -42,15 +50,18 @@ def find_best_photos(
         if hidden_gems_only:
             where_clauses.append("a.ZFAVORITE != 1")
 
+        params: list = []
         if year:
-            where_clauses.append(f"strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '{year}'")
+            year = validate_year(year)
+            where_clauses.append("strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?")
+            params.append(year)
 
         query = build_asset_query(
             where_clauses=where_clauses,
             join_additional=True,
             join_computed=True,
         )
-        cursor.execute(query)
+        cursor.execute(query, params)
 
         scored_photos = []
         total_with_scores = 0

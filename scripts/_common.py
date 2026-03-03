@@ -5,7 +5,9 @@ All scripts use this module for consistent database access and data formatting.
 """
 
 import argparse
+import contextlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -14,8 +16,24 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
+logger = logging.getLogger("apple_photos_cleaner")
+
 # Core Data reference date (January 1, 2001 00:00:00 UTC)
 CORE_DATA_EPOCH = datetime(2001, 1, 1, 0, 0, 0)
+
+
+def setup_logging(verbose: bool = False) -> None:
+    """Configure logging for the application.
+
+    Args:
+        verbose: If True, set DEBUG level; otherwise INFO.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(levelname)s: %(message)s",
+        stream=sys.stderr,
+    )
 
 
 def find_photos_db(custom_path: Optional[str] = None) -> str:
@@ -62,10 +80,26 @@ def connect_db(db_path: str) -> sqlite3.Connection:
 
     Returns:
         SQLite connection
+
+    Raises:
+        FileNotFoundError: If database file doesn't exist
+        PermissionError: If database file can't be read
+        sqlite3.OperationalError: If connection fails
     """
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(f"Database not found: {db_path}")
+    if not os.access(db_path, os.R_OK):
+        raise PermissionError(f"Cannot read database (permission denied): {db_path}")
+
     # Use read-only mode with URI; busy_timeout retries if Photos.app holds a lock
     uri = f"file:{db_path}?mode=ro"
-    conn = sqlite3.connect(uri, uri=True, timeout=5)
+    try:
+        conn = sqlite3.connect(uri, uri=True, timeout=5)
+    except sqlite3.OperationalError as e:
+        raise sqlite3.OperationalError(
+            f"Failed to open database: {db_path} — {e}\n"
+            "Hint: Close Photos.app or check if the file is a valid SQLite database."
+        ) from e
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -134,13 +168,20 @@ def output_json(data: Any, output_file: Optional[str] = None, pretty: bool = Tru
         data: Data to serialize
         output_file: Optional output file path
         pretty: Whether to pretty-print JSON
+
+    Raises:
+        OSError: If output file cannot be written
     """
     json_str = json.dumps(data, indent=2 if pretty else None)
 
     if output_file:
-        with open(output_file, "w") as f:
-            f.write(json_str)
-        print(f"Output written to: {output_file}", file=sys.stderr)
+        try:
+            with open(output_file, "w") as f:
+                f.write(json_str)
+        except OSError as e:
+            logger.error("Cannot write to %s: %s", output_file, e)
+            raise
+        logger.info("Output written to: %s", output_file)
     else:
         print(json_str)
 
@@ -273,7 +314,8 @@ class PhotosDB:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Close connection."""
         if self.conn:
-            self.conn.close()
+            with contextlib.suppress(sqlite3.ProgrammingError):
+                self.conn.close()
 
 
 # Query builders
@@ -438,11 +480,13 @@ def run_script(
     parser.add_argument("--library", help="Path to Photos library")
     parser.add_argument("-o", "--output", help="Output JSON file")
     parser.add_argument("--human", action="store_true", help="Output human-readable summary instead of JSON")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
 
     if extra_args_fn:
         extra_args_fn(parser)
 
     args = parser.parse_args()
+    setup_logging(verbose=getattr(args, "verbose", False))
     db_path = args.db_path or args.library
 
     try:
@@ -458,9 +502,16 @@ def run_script(
         return 0
 
     except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error("%s", e)
+        return 1
+    except ValueError as e:
+        logger.error("%s", e)
+        return 1
+    except sqlite3.OperationalError as e:
+        logger.error("Database error: %s", e)
         return 1
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        traceback.print_exc()
+        logger.error("Unexpected error: %s", e)
+        if logger.isEnabledFor(logging.DEBUG):
+            traceback.print_exc()
         return 1

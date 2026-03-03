@@ -8,7 +8,7 @@ import sys
 from collections import defaultdict
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, format_size, run_script
+from _common import PhotosDB, coredata_to_datetime, format_size, run_script, validate_year
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -31,11 +31,15 @@ def analyze_habits(
         cursor = conn.cursor()
 
         year_filter = ""
+        year_params: list = []
         if year:
-            year_filter = f"AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '{year}'"
+            year = validate_year(year)
+            year_filter = "AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?"
+            year_params = [year]
 
         # Get all non-trashed assets with timestamps
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             SELECT
                 a.ZDATECREATED,
                 a.ZKIND,
@@ -48,7 +52,9 @@ def analyze_habits(
             AND a.ZDATECREATED IS NOT NULL
             {year_filter}
             ORDER BY a.ZDATECREATED
-        """)
+        """,
+            year_params,
+        )
 
         # Accumulators
         by_hour = defaultdict(int)

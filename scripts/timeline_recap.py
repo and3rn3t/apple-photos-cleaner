@@ -35,16 +35,19 @@ def generate_timeline(
 
         # Build date filters
         where_clauses = ["a.ZTRASHEDSTATE != 1"]
+        params: list = []
 
         if start_date:
             dt = datetime.fromisoformat(start_date)
             timestamp = datetime_to_coredata(dt)
-            where_clauses.append(f"a.ZDATECREATED >= {timestamp}")
+            where_clauses.append("a.ZDATECREATED >= ?")
+            params.append(timestamp)
 
         if end_date:
             dt = datetime.fromisoformat(end_date + " 23:59:59")
             timestamp = datetime_to_coredata(dt)
-            where_clauses.append(f"a.ZDATECREATED <= {timestamp}")
+            where_clauses.append("a.ZDATECREATED <= ?")
+            params.append(timestamp)
 
         # Get photos with metadata
         query = f"""
@@ -61,7 +64,7 @@ def generate_timeline(
             ORDER BY a.ZDATECREATED
         """
 
-        cursor.execute(query)
+        cursor.execute(query, params)
         photos = []
 
         for row in cursor.fetchall():

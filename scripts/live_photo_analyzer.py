@@ -14,6 +14,7 @@ from _common import (
     format_size,
     get_quality_score,
     run_script,
+    validate_year,
 )
 
 # Live Photo sub-kinds
@@ -95,8 +96,11 @@ def analyze_live_photos(
         )
 
         where = ["a.ZTRASHEDSTATE != 1", "a.ZKIND = 0"]  # photos only
+        params: list = []
         if year:
-            where.append(f"strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = '{year}'")
+            year = validate_year(year)
+            where.append("strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?")
+            params.append(year)
 
         query = f"""
             SELECT {", ".join(select_cols)}
@@ -106,7 +110,7 @@ def analyze_live_photos(
             WHERE {" AND ".join(where)}
             ORDER BY a.ZDATECREATED DESC
         """
-        cursor.execute(query)
+        cursor.execute(query, params)
 
         live_photos = []
         still_photos_count = 0

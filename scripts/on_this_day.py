@@ -85,11 +85,11 @@ def on_this_day(
             LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
             WHERE a.ZTRASHEDSTATE != 1
             AND {date_filter}
-            AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) != '{current_year}'
+            AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) != ?
             ORDER BY a.ZDATECREATED DESC
         """
 
-        cursor.execute(query)
+        cursor.execute(query, (str(current_year),))
 
         # Group by year
         by_year = defaultdict(list)
