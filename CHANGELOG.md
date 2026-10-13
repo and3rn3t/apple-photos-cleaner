@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 a removed or renamed one is a major. See [RELEASING.md](RELEASING.md) for how a
 release is cut.
 
-## [1.0.3] - Unreleased
+## [1.0.3] - 2026-10-13
 
 Hygiene patch: roadmap items T0.1–T0.6, T0.8, T0.12 and T0.13.
 
