@@ -77,7 +77,7 @@ def analyze_habits(
         first_date = None
         last_date = None
 
-        for row in cursor.fetchall():
+        for row in cursor:
             dt = coredata_to_datetime(row["ZDATECREATED"])
             if dt is None:
                 continue

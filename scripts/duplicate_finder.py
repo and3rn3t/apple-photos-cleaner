@@ -55,7 +55,7 @@ def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
         """)
 
         apple_duplicates: dict[Any, list[dict[str, Any]]] = {}
-        for row in cursor.fetchall():
+        for row in cursor:
             state = row["ZDUPLICATEASSETVISIBILITYSTATE"]
             if state not in apple_duplicates:
                 apple_duplicates[state] = []
@@ -93,7 +93,7 @@ def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
 
         # Group by (timestamp_rounded, width, height)
         timestamp_groups = defaultdict(list)
-        for row in cursor.fetchall():
+        for row in cursor:
             # Round timestamp to nearest second
             timestamp = int(row["ZDATECREATED"]) if row["ZDATECREATED"] else 0
             key = (timestamp, row["ZWIDTH"], row["ZHEIGHT"])

@@ -140,7 +140,7 @@ def find_junk(
         """)
 
         burst_size = 0
-        for row in cursor.fetchall():
+        for row in cursor:
             asset_id = row["Z_PK"]
             filename = row["ZFILENAME"]
             created = coredata_to_datetime(row["ZDATECREATED"])
@@ -177,7 +177,7 @@ def find_junk(
                 ORDER BY a.ZDATECREATED DESC
             """)
 
-            for row in cursor.fetchall():
+            for row in cursor:
                 asset_id = row["Z_PK"]
                 filename = row["ZFILENAME"]
                 created = coredata_to_datetime(row["ZDATECREATED"])
