@@ -39,7 +39,7 @@ def find_junk(
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
 
-        results = {
+        results: dict[str, Any] = {
             "screenshots": [],
             "old_screenshots": [],
             "low_quality": [],

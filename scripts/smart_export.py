@@ -163,7 +163,7 @@ def generate_export_plan(
             )
 
         # Convert to serializable format
-        plan = {
+        plan: dict[str, Any] = {
             "organize_by": organize_by,
             "filters": {
                 "favorites_only": favorites_only,

@@ -54,7 +54,7 @@ def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
             ORDER BY a.ZDATECREATED
         """)
 
-        apple_duplicates = {}
+        apple_duplicates: dict[Any, list[dict[str, Any]]] = {}
         for row in cursor.fetchall():
             state = row["ZDUPLICATEASSETVISIBILITYSTATE"]
             if state not in apple_duplicates:

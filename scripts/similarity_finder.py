@@ -140,7 +140,7 @@ def find_similar_photos(
             )
 
         # Find similar pairs using cosine similarity
-        groups: dict[int, list[dict]] = {}
+        groups: dict[int, list[int]] = {}
         assigned: set[int] = set()
 
         for i in range(len(photos)):

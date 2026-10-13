@@ -178,7 +178,7 @@ def analyze_people(
             )
 
         # Co-occurrence analysis: who appears together
-        co_occurrences = defaultdict(int)
+        co_occurrences: defaultdict[Any, int] = defaultdict(int)
         if people:
             person_ids = [p["person_id"] for p in people[:top_n]]
             placeholders = ",".join("?" * len(person_ids))

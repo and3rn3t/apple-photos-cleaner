@@ -116,7 +116,7 @@ def analyze_live_photos(
         still_photos_count = 0
         still_photos_size = 0
         live_total_size = 0
-        by_playback = {}
+        by_playback: dict[Any, int] = {}
         by_year: dict[str, dict] = {}
 
         for row in cursor.fetchall():

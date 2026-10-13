@@ -230,8 +230,7 @@ def is_hidden(row) -> bool:
 def is_trashed(row) -> bool:
     """Check if an asset is in the trash."""
     d = dict(row) if not isinstance(row, dict) else row
-    trashed_state = d.get("ZTRASHEDSTATE", 0)
-    return trashed_state == 1
+    return bool(d.get("ZTRASHEDSTATE", 0) == 1)
 
 
 def get_quality_score(row) -> Optional[float]:
@@ -253,7 +252,7 @@ def get_quality_score(row) -> Optional[float]:
     if not isinstance(row, dict):
         row = dict(row)
 
-    scores = []
+    scores: list[float] = []
 
     # Positive scores (higher is better)
     if row.get("ZPLEASANTCOMPOSITIONSCORE") is not None:
@@ -275,15 +274,15 @@ def get_quality_score(row) -> Optional[float]:
 
 def format_date_range(start: Optional[datetime], end: Optional[datetime]) -> str:
     """Format a date range as a human-readable string."""
-    if start is None and end is None:
-        return "Unknown"
-    if start is None:
-        return f"Until {end.strftime('%Y-%m-%d')}"
-    if end is None:
+    if start is not None and end is not None:
+        if start.date() == end.date():
+            return start.strftime("%Y-%m-%d")
+        return f"{start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}"
+    if start is not None:
         return f"From {start.strftime('%Y-%m-%d')}"
-    if start.date() == end.date():
-        return start.strftime("%Y-%m-%d")
-    return f"{start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}"
+    if end is not None:
+        return f"Until {end.strftime('%Y-%m-%d')}"
+    return "Unknown"
 
 
 def detect_face_schema(cursor: sqlite3.Cursor) -> dict[str, str]:

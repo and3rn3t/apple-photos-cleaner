@@ -180,7 +180,7 @@ def get_seasonal_highlights(
         ]
 
         total_photos = sum(total_by_season.values())
-        busiest_season = max(total_by_season, key=total_by_season.get) if total_photos else None
+        busiest_season = max(total_by_season, key=lambda s: total_by_season[s]) if total_photos else None
 
         return {
             "highlights": highlights,
@@ -189,7 +189,7 @@ def get_seasonal_highlights(
                 "total_photos": total_photos,
                 "by_season": total_by_season,
                 "busiest_season": busiest_season,
-                "busiest_emoji": SEASON_EMOJI.get(busiest_season, ""),
+                "busiest_emoji": SEASON_EMOJI.get(busiest_season, "") if busiest_season else "",
                 "hemisphere": "southern" if southern_hemisphere else "northern",
                 "top_n": top_n,
                 "year_filter": year or "all years",

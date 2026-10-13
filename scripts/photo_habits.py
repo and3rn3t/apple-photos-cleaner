@@ -57,13 +57,17 @@ def analyze_habits(
         )
 
         # Accumulators
-        by_hour = defaultdict(int)
-        by_day_of_week = defaultdict(int)
-        by_month = defaultdict(int)
-        by_year_month = defaultdict(lambda: {"photos": 0, "videos": 0, "screenshots": 0, "size": 0, "favorites": 0})
-        by_year = defaultdict(lambda: {"photos": 0, "videos": 0, "total": 0, "size": 0})
-        streaks = {"current": 0, "max": 0, "max_start": None, "max_end": None}
-        daily_counts = defaultdict(int)
+        by_hour: defaultdict[int, int] = defaultdict(int)
+        by_day_of_week: defaultdict[int, int] = defaultdict(int)
+        by_month: defaultdict[int, int] = defaultdict(int)
+        by_year_month: defaultdict[str, dict[str, int]] = defaultdict(
+            lambda: {"photos": 0, "videos": 0, "screenshots": 0, "size": 0, "favorites": 0}
+        )
+        by_year: defaultdict[str, dict[str, int]] = defaultdict(
+            lambda: {"photos": 0, "videos": 0, "total": 0, "size": 0}
+        )
+        streaks: dict[str, Any] = {"current": 0, "max": 0, "max_start": None, "max_end": None}
+        daily_counts: defaultdict[str, int] = defaultdict(int)
 
         total_photos = 0
         total_videos = 0

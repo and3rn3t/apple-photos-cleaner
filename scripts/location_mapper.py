@@ -302,7 +302,7 @@ def analyze_locations(
             last = max(dates) if dates else None
 
             # Count by year-month
-            by_month = defaultdict(int)
+            by_month: defaultdict[str, int] = defaultdict(int)
             for p in cluster_photos:
                 if p["created_dt"]:
                     key = p["created_dt"].strftime("%Y-%m")
