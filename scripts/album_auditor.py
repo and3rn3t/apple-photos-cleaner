@@ -5,13 +5,13 @@ and suggest album groupings from timeline clusters.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import PhotosDB, format_size, run_script
 
 
 def audit_albums(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
 ) -> dict[str, Any]:
     """
     Audit albums for organization issues.
@@ -194,7 +194,7 @@ def audit_albums(
         }
 
 
-def _find_album_junction_table(cursor) -> Optional[tuple]:
+def _find_album_junction_table(cursor) -> tuple | None:
     """
     Find the album-asset junction table. The table name varies by schema version.
     Common patterns: Z_27ASSETS, Z_26ASSETS, etc.

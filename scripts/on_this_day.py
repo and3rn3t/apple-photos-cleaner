@@ -7,14 +7,14 @@ A richer version of Apple's Memories with people, scenes, and quality context.
 import sys
 from collections import defaultdict
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 from _common import PhotosDB, coredata_to_datetime, detect_face_schema, format_size, get_quality_score, run_script
 
 
 def on_this_day(
-    db_path: Optional[str] = None,
-    target_date: Optional[str] = None,
+    db_path: str | None = None,
+    target_date: str | None = None,
     window_days: int = 0,
 ) -> dict[str, Any]:
     """

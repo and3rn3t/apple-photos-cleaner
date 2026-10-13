@@ -6,13 +6,13 @@ Co-occurrence, trends over time, best photos per person, and more.
 
 import sys
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
 from _common import PhotosDB, coredata_to_datetime, detect_face_schema, get_quality_score, run_script
 
 
 def analyze_people(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     min_photos: int = 5,
     top_n: int = 20,
 ) -> dict[str, Any]:

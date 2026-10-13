@@ -5,7 +5,7 @@ Find junk photos: screenshots, low-quality images, burst leftovers, old screensh
 
 import sys
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -19,7 +19,7 @@ from _common import (
 
 
 def find_junk(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     screenshot_age_days: int = 30,
     quality_threshold: float = 0.3,
     include_duplicates: bool = True,

@@ -9,7 +9,7 @@ to surface groups of near-identical or thematically similar images.
 
 import math
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -23,7 +23,7 @@ from _common import (
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     mag_a = math.sqrt(sum(x * x for x in a))
     mag_b = math.sqrt(sum(x * x for x in b))
     if mag_a == 0 or mag_b == 0:
@@ -61,9 +61,9 @@ def _extract_features(row: dict) -> list[float]:
 
 
 def find_similar_photos(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     threshold: float = 0.95,
-    year: Optional[str] = None,
+    year: str | None = None,
     limit: int = 500,
 ) -> dict[str, Any]:
     """

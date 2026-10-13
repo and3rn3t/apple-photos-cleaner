@@ -7,7 +7,7 @@ quality scores, favorites, and scene context to build highlight reels.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -52,8 +52,8 @@ for season, months in SEASONS_SH.items():
 
 
 def get_seasonal_highlights(
-    db_path: Optional[str] = None,
-    year: Optional[str] = None,
+    db_path: str | None = None,
+    year: str | None = None,
     top_n: int = 20,
     southern_hemisphere: bool = False,
 ) -> dict[str, Any]:

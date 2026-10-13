@@ -6,7 +6,7 @@ Time-of-day patterns, busiest days, seasonal trends, photo vs video ratios.
 
 import sys
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
 from _common import PhotosDB, coredata_to_datetime, format_size, run_script, validate_year
 
@@ -14,8 +14,8 @@ DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 
 
 def analyze_habits(
-    db_path: Optional[str] = None,
-    year: Optional[str] = None,
+    db_path: str | None = None,
+    year: str | None = None,
 ) -> dict[str, Any]:
     """
     Analyze photo-taking habits and patterns.

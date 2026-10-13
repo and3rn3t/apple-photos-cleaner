@@ -7,7 +7,7 @@ Groups photos by day/event clusters and includes context like people, locations,
 import argparse
 import sys
 from datetime import date, datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -20,9 +20,9 @@ from _common import (
 
 
 def generate_timeline(
-    db_path: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    db_path: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     cluster_hours: int = 4,
 ) -> dict[str, Any]:
     """
@@ -199,7 +199,7 @@ def generate_timeline(
 
         # Group events by day
         timeline = []
-        current_day: Optional[date] = None
+        current_day: date | None = None
         day_events: list[dict[str, Any]] = []
 
         for event in events:

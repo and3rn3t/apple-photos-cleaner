@@ -5,7 +5,7 @@ Find duplicate photos and suggest which to keep based on quality scores.
 
 import sys
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -18,7 +18,7 @@ from _common import (
 )
 
 
-def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
+def find_duplicates(db_path: str | None = None) -> dict[str, Any]:
     """
     Find duplicate photos using multiple detection methods.
 

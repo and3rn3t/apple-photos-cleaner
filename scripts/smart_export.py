@@ -16,7 +16,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -34,13 +34,13 @@ _RESULT_RE = re.compile(r"EXPORTED:(\d+)\s+SKIPPED:(\d+)")
 
 
 def generate_export_plan(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     organize_by: str = "year_month",
     favorites_only: bool = False,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    person_name: Optional[str] = None,
-    album_name: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    person_name: str | None = None,
+    album_name: str | None = None,
 ) -> dict[str, Any]:
     """
     Generate an export plan showing what will be exported.

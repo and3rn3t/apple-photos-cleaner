@@ -5,7 +5,7 @@ find Live Photos that could be converted to stills to save space.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -34,8 +34,8 @@ PLAYBACK_NAMES = {
 
 
 def analyze_live_photos(
-    db_path: Optional[str] = None,
-    year: Optional[str] = None,
+    db_path: str | None = None,
+    year: str | None = None,
 ) -> dict[str, Any]:
     """
     Analyze Live Photos in the library.

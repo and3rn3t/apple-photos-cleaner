@@ -7,7 +7,7 @@ Cluster GPS coordinates into locations, identify trips, find most-photographed p
 import math
 import sys
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
 from _common import PhotosDB, coredata_to_datetime, detect_face_schema, format_size, run_script, validate_year
 
@@ -125,7 +125,7 @@ KNOWN_PLACES: list[tuple[float, float, str, str]] = [
 REVERSE_GEO_THRESHOLD_KM = 50
 
 
-def reverse_geocode(lat: float, lon: float) -> Optional[str]:
+def reverse_geocode(lat: float, lon: float) -> str | None:
     """
     Offline reverse geocode: return "City, Country" for a coordinate,
     or None if no known place is within the threshold distance.
@@ -205,9 +205,9 @@ def cluster_locations(
 
 
 def analyze_locations(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     cluster_radius_km: float = 1.0,
-    year: Optional[str] = None,
+    year: str | None = None,
     min_photos: int = 3,
 ) -> dict[str, Any]:
     """

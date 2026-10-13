@@ -5,7 +5,7 @@ Surface overlooked great shots using Apple's computed quality scores.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -19,11 +19,11 @@ from _common import (
 
 
 def find_best_photos(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     min_quality: float = 0.7,
     top_n: int = 50,
     hidden_gems_only: bool = False,
-    year: Optional[str] = None,
+    year: str | None = None,
 ) -> dict[str, Any]:
     """
     Find best quality photos, optionally filtering to hidden gems (not favorited).

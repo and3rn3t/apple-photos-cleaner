@@ -7,7 +7,7 @@ download status, and potential sync issues.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -28,7 +28,7 @@ CLOUD_STATE_NAMES = {
 
 
 def analyze_icloud_status(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
 ) -> dict[str, Any]:
     """
     Analyze iCloud sync status of all assets.

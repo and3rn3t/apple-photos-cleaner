@@ -13,8 +13,9 @@ import re
 import sqlite3
 import sys
 import traceback
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable, Optional
+from typing import Any
 
 logger = logging.getLogger("apple_photos_cleaner")
 
@@ -36,7 +37,7 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
-def find_photos_db(custom_path: Optional[str] = None) -> str:
+def find_photos_db(custom_path: str | None = None) -> str:
     """
     Find the Photos.sqlite database.
 
@@ -104,7 +105,7 @@ def connect_db(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def coredata_to_datetime(timestamp: Optional[float]) -> Optional[datetime]:
+def coredata_to_datetime(timestamp: float | None) -> datetime | None:
     """
     Convert Core Data timestamp to Python datetime.
     Core Data timestamps are seconds since 2001-01-01 00:00:00 UTC.
@@ -134,7 +135,7 @@ def datetime_to_coredata(dt: datetime) -> float:
     return delta.total_seconds()
 
 
-def format_size(bytes_size: Optional[int]) -> str:
+def format_size(bytes_size: int | None) -> str:
     """
     Format byte size to human-readable string.
 
@@ -160,7 +161,7 @@ def format_size(bytes_size: Optional[int]) -> str:
     return f"{size:.2f} {units[unit_index]}"
 
 
-def output_json(data: Any, output_file: Optional[str] = None, pretty: bool = True) -> None:
+def output_json(data: Any, output_file: str | None = None, pretty: bool = True) -> None:
     """
     Output data as JSON to file or stdout.
 
@@ -233,7 +234,7 @@ def is_trashed(row) -> bool:
     return bool(d.get("ZTRASHEDSTATE", 0) == 1)
 
 
-def get_quality_score(row) -> Optional[float]:
+def get_quality_score(row) -> float | None:
     """
     Calculate a simple quality score from multiple quality attributes.
     Higher is better. Returns None if no quality data available.
@@ -272,7 +273,7 @@ def get_quality_score(row) -> Optional[float]:
     return sum(scores) / len(scores)
 
 
-def format_date_range(start: Optional[datetime], end: Optional[datetime]) -> str:
+def format_date_range(start: datetime | None, end: datetime | None) -> str:
     """Format a date range as a human-readable string."""
     if start is not None and end is not None:
         if start.date() == end.date():
@@ -307,7 +308,7 @@ def detect_face_schema(cursor: sqlite3.Cursor) -> dict[str, str]:
 class PhotosDB:
     """Context manager for Photos database connection."""
 
-    def __init__(self, db_path: Optional[str] = None, library_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None, library_path: str | None = None):
         """
         Initialize database connection.
 
@@ -322,7 +323,7 @@ class PhotosDB:
         else:
             self.db_path = find_photos_db()
 
-        self.conn: Optional[sqlite3.Connection] = None
+        self.conn: sqlite3.Connection | None = None
 
     def __enter__(self) -> sqlite3.Connection:
         """Open connection."""
@@ -338,11 +339,11 @@ class PhotosDB:
 
 # Query builders
 def build_asset_query(
-    where_clauses: Optional[list[str]] = None,
+    where_clauses: list[str] | None = None,
     join_additional: bool = False,
     join_computed: bool = False,
-    order_by: Optional[str] = None,
-    limit: Optional[int] = None,
+    order_by: str | None = None,
+    limit: int | None = None,
 ) -> str:
     """
     Build a query for ZASSET table with optional joins and filters.
@@ -401,7 +402,7 @@ def build_asset_query(
 # ── Security helpers ─────────────────────────────────────────────────────────
 
 
-def validate_year(year: Optional[str]) -> Optional[str]:
+def validate_year(year: str | None) -> str | None:
     """Validate that a year string is a 4-digit number.
 
     Args:
@@ -527,8 +528,8 @@ def run_script(
     description: str,
     analyze_fn: Callable,
     format_fn: Callable[[dict], str],
-    extra_args_fn: Optional[Callable[[argparse.ArgumentParser], None]] = None,
-    epilog: Optional[str] = None,
+    extra_args_fn: Callable[[argparse.ArgumentParser], None] | None = None,
+    epilog: str | None = None,
 ) -> int:
     """
     Shared CLI entry-point used by every analysis script.

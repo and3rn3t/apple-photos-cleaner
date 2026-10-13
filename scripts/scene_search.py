@@ -6,17 +6,17 @@ Search by content type (beach, sunset, dog, food), generate content inventory.
 
 import sys
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
 from _common import PhotosDB, coredata_to_datetime, format_size, run_script, validate_year
 
 
 def search_scenes(
-    db_path: Optional[str] = None,
-    search_term: Optional[str] = None,
+    db_path: str | None = None,
+    search_term: str | None = None,
     min_confidence: float = 0.0,
     top_n: int = 50,
-    year: Optional[str] = None,
+    year: str | None = None,
 ) -> dict[str, Any]:
     """
     Search photos by scene classification or generate content inventory.

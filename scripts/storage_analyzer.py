@@ -4,12 +4,12 @@ Detailed storage analysis: by year, type, source, growth trends, storage hogs.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import PhotosDB, coredata_to_datetime, format_size, get_asset_kind_name, run_script
 
 
-def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
+def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
     """
     Perform detailed storage analysis.
 

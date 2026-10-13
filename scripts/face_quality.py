@@ -8,7 +8,7 @@ yaw angle, smile score, face size, and center position to rank face photos.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -60,8 +60,8 @@ def compute_face_score(row: dict) -> float:
 
 
 def analyze_face_quality(
-    db_path: Optional[str] = None,
-    person_name: Optional[str] = None,
+    db_path: str | None = None,
+    person_name: str | None = None,
     top_n: int = 10,
 ) -> dict[str, Any]:
     """

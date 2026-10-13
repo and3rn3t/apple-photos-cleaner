@@ -14,7 +14,7 @@ import argparse
 import re
 import subprocess
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     LOCAL_IDENTIFIER_SUFFIX,
@@ -37,7 +37,7 @@ __all__ = ["LOCAL_IDENTIFIER_SUFFIX", "generate_trash_applescript", "require_uui
 
 
 def get_cleanup_candidates(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     category: str = "old_screenshots",
     screenshot_age_days: int = 30,
     quality_threshold: float = 0.3,

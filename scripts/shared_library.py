@@ -7,7 +7,7 @@ breakdown, overlap analysis, and storage impact of shared content.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -19,7 +19,7 @@ from _common import (
 
 
 def analyze_shared_library(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
 ) -> dict[str, Any]:
     """
     Analyze the Shared Library vs Personal Library.

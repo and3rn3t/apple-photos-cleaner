@@ -4,7 +4,7 @@ Analyze Apple Photos library: counts, storage, date ranges, people, quality scor
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
@@ -18,7 +18,7 @@ from _common import (
 )
 
 
-def analyze_library(db_path: Optional[str] = None) -> dict[str, Any]:
+def analyze_library(db_path: str | None = None) -> dict[str, Any]:
     """
     Perform comprehensive library analysis.
 
