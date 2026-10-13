@@ -30,6 +30,7 @@ htmlcov/
 .mypy_cache/
 
 # Virtual environments
+.venv/
 venv/
 ENV/
 env/
@@ -46,7 +47,18 @@ env/
 .AppleDouble
 .LSOverride
 
-# Output files
-*.json
-*.txt
-!requirements.txt
+# Script output. Scripts only write where `-o/--output` points, so this lists
+# the filenames the --help examples suggest rather than ignoring all *.json —
+# a blanket rule silently hides config files like renovate.json.
+output/
+analysis.json
+audit.json
+best.json
+duplicates.json
+habits.json
+junk.json
+locations.json
+people.json
+storage.json
+*-report.json
+*-report.txt
