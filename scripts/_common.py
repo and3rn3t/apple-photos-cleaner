@@ -417,7 +417,10 @@ class PhotosDB:
             db_path: Direct path to Photos.sqlite
             library_path: Path to Photos library (will append /database/Photos.sqlite)
         """
-        if db_path:
+        # Scripts pass `args.db_path or args.library`, so a library bundle can arrive as db_path.
+        if db_path and os.path.isdir(db_path):
+            self.db_path = os.path.join(db_path, "database", "Photos.sqlite")
+        elif db_path:
             self.db_path = db_path
         elif library_path:
             self.db_path = os.path.join(library_path, "database", "Photos.sqlite")

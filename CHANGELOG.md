@@ -23,6 +23,9 @@ release is cut.
 
 ### Fixed
 
+- `--library <bundle>.photoslibrary` works. Every script handed the bundle
+  directory to SQLite as if it were the database file, which failed with a
+  "disk I/O error"; only `--db-path` worked.
 - A missing Full Disk Access grant is now reported as permission denied.
   macOS privacy denials are invisible to `os.access()`, so it used to surface as
   an opaque SQLite open error.
