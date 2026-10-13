@@ -1263,15 +1263,9 @@ files like the photos they describe.
 **"Results don't match Photos.app counts"**  
 → Scripts exclude trashed items; Photos.app may show different views
 
-## Future Enhancements
+## Roadmap
 
-All previously planned features have been implemented! Possible further expansions:
-- Machine learning model export for custom photo classifiers
-- Photo deduplication across multiple Photos libraries
-- Integration with external photo services (Google Photos, Flickr)
-- Time-lapse generation from photo sequences
-- Custom smart album rule builder
-- Photo metadata repair / bulk editing suggestions
+Planned work, priorities and non-goals live in [ROADMAP.md](ROADMAP.md).
 
 ---
 
