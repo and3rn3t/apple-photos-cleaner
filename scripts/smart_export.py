@@ -2,10 +2,16 @@
 """
 Smart export of photos organized by year/month, person, album, or location.
 Uses AppleScript to trigger actual exports from Photos.app.
+
+Items are targeted by their stable asset UUID (ZASSET.ZUUID), never by filename.
+Photos filenames are not unique, so a filename search can match assets that the
+export filters deliberately excluded — exporting more than the plan showed.
+See export_with_applescript for the matching rules.
 """
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from collections import defaultdict
@@ -14,12 +20,17 @@ from typing import Any, Optional
 
 from _common import (
     PhotosDB,
+    build_identifier_lists,
     coredata_to_datetime,
     detect_face_schema,
     escape_applescript,
     format_size,
+    require_uuid_support,
     sanitize_folder_name,
 )
+
+# Counters reported back by the generated AppleScript.
+_RESULT_RE = re.compile(r"EXPORTED:(\d+)\s+SKIPPED:(\d+)")
 
 
 def generate_export_plan(
@@ -48,6 +59,7 @@ def generate_export_plan(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        require_uuid_support(cursor, "Export")
         schema = detect_face_schema(cursor)
 
         # Build WHERE clauses
@@ -82,6 +94,7 @@ def generate_export_plan(
         query = """
             SELECT
                 a.Z_PK,
+                a.ZUUID,
                 a.ZFILENAME,
                 a.ZDATECREATED,
                 a.ZLATITUDE,
@@ -156,6 +169,7 @@ def generate_export_plan(
             organized[key].append(
                 {
                     "id": asset_id,
+                    "uuid": row["ZUUID"],
                     "filename": filename,
                     "created": created.isoformat() if created else None,
                     "size": size,
@@ -193,17 +207,30 @@ def generate_export_plan(
         return plan
 
 
-def export_with_applescript(filenames: list[str], output_dir: str, folder_name: str = "") -> bool:
+def export_with_applescript(items: list[dict[str, Any]], output_dir: str, folder_name: str = "") -> tuple[int, int]:
     """
-    Use AppleScript to export photos from Photos.app by filename.
+    Use AppleScript to export specific assets from Photos.app.
+
+    Each asset is looked up by its exact Photos identifier (``<UUID>/L0/001``),
+    derived from ZASSET.ZUUID. Two guards keep the export bounded to the plan:
+
+    1. **Identity, not filename.** Photos filenames are not unique, so the old
+       ``search for`` approach could export an asset the filters had excluded —
+       a different photo that merely shared a name with a planned one.
+    2. **Filename cross-check.** After resolving an id we confirm the returned
+       item's filename matches what the database reported. Any mismatch, or any
+       id that fails to resolve, is skipped rather than exported.
 
     Args:
-        filenames: List of filenames to export
+        items: Assets to export, each needing a "uuid" and "filename"
         output_dir: Base output directory
         folder_name: Subfolder name (if organizing)
 
     Returns:
-        True if successful
+        An ``(exported, skipped)`` count pair. ``(0, len(items))`` on failure.
+
+    Raises:
+        ValueError: If folder_name escapes output_dir, or an item has no UUID
     """
     # Create output directory, with path traversal protection
     if folder_name:
@@ -218,36 +245,40 @@ def export_with_applescript(filenames: list[str], output_dir: str, folder_name: 
     if not real_export.startswith(real_output):
         raise ValueError(f"Path traversal detected in folder name: {folder_name!r}")
 
+    id_list, name_list = build_identifier_lists(items)
     Path(export_path).mkdir(parents=True, exist_ok=True)
-
-    # Build AppleScript that searches by filename, then exports matches.
-    # Photos.app doesn't expose Z_PK, so we match by filename (same
-    # pattern used in cleanup_executor.py for delete).
     escaped_path = escape_applescript(export_path)
-    file_match_blocks = []
-    for fn in filenames:
-        escaped = escape_applescript(fn)
-        file_match_blocks.append(
-            f'        set targetName to "{escaped}"\n'
-            f"        set matchedItems to (search for targetName)\n"
-            f"        repeat with anItem in matchedItems\n"
-            f"            if filename of anItem is targetName then\n"
-            f"                copy anItem to end of toExport\n"
-            f"            end if\n"
-            f"        end repeat"
-        )
 
-    search_code = "\n".join(file_match_blocks)
-    applescript = (
-        'tell application "Photos"\n'
-        "    set toExport to {}\n"
-        f"{search_code}\n"
-        f'    set destFolder to POSIX file "{escaped_path}" as alias\n'
-        "    if (count of toExport) > 0 then\n"
-        "        export toExport to destFolder\n"
-        "    end if\n"
-        "end tell"
-    )
+    applescript = f"""
+set targetIds to {{{id_list}}}
+set targetNames to {{{name_list}}}
+set toExport to {{}}
+set skippedCount to 0
+
+tell application "Photos"
+    repeat with i from 1 to count of targetIds
+        try
+            set theItem to media item id (item i of targetIds)
+            if (filename of theItem) is equal to (item i of targetNames) then
+                set end of toExport to theItem
+            else
+                set skippedCount to skippedCount + 1
+            end if
+        on error
+            -- id did not resolve (already deleted, or not in this library)
+            set skippedCount to skippedCount + 1
+        end try
+    end repeat
+
+    set exportedCount to count of toExport
+    if exportedCount > 0 then
+        set destFolder to POSIX file "{escaped_path}" as alias
+        export toExport to destFolder
+    end if
+end tell
+
+return "EXPORTED:" & (exportedCount as text) & " SKIPPED:" & (skippedCount as text)
+"""
 
     try:
         result = subprocess.run(
@@ -258,13 +289,19 @@ def export_with_applescript(filenames: list[str], output_dir: str, folder_name: 
         )
         if result.returncode != 0:
             print(f"  AppleScript error: {result.stderr.strip()}", file=sys.stderr)
-        return result.returncode == 0
+            return 0, len(items)
+
+        match = _RESULT_RE.search(result.stdout)
+        if not match:
+            print(f"  Unexpected AppleScript output: {result.stdout.strip()!r}", file=sys.stderr)
+            return 0, len(items)
+        return int(match.group(1)), int(match.group(2))
     except subprocess.TimeoutExpired:
         print("  Export timed out (>600 s)", file=sys.stderr)
-        return False
+        return 0, len(items)
     except Exception as e:
         print(f"Error running AppleScript: {e}", file=sys.stderr)
-        return False
+        return 0, len(items)
 
 
 def main():
@@ -286,6 +323,8 @@ Examples:
   %(prog)s --output-dir ~/Pictures/Export --album "Vacation 2025" --organize-by album
 
 Note: Actual export requires Photos.app and proper permissions.
+Export writes copies into --output-dir; it never alters the library. When run
+interactively it asks for confirmation first — pass --yes to skip that.
         """,
     )
     parser.add_argument("--db-path", help="Path to Photos.sqlite database")
@@ -303,6 +342,7 @@ Note: Actual export requires Photos.app and proper permissions.
     parser.add_argument("--person", help="Export only photos with this person")
     parser.add_argument("--album", help="Export only from this album")
     parser.add_argument("--plan-only", action="store_true", help="Show export plan without actually exporting")
+    parser.add_argument("--yes", action="store_true", help="Skip the interactive confirmation prompt")
 
     args = parser.parse_args()
 
@@ -338,23 +378,38 @@ Note: Actual export requires Photos.app and proper permissions.
             print("(Plan only - no actual export performed)")
             return 0
 
+        # Confirm before writing anything. Only prompt on a TTY so piped and
+        # scripted runs are unaffected; --yes covers an interactive opt-out.
+        if not args.yes and sys.stdin.isatty():
+            total = plan["summary"]["total_photos"]
+            print(f"About to export {total:,} photos to {args.output_dir}")
+            if input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
+                print("Cancelled.")
+                return 0
+            print()
+
         # Perform export
         print(f"Exporting to: {args.output_dir}")
         print()
 
+        total_exported = 0
+        total_skipped = 0
         for folder_name, folder_info in plan["folders"].items():
             print(f"Exporting {folder_name}... ", end="", flush=True)
-            filenames = [item["filename"] for item in folder_info["items"]]
 
-            success = export_with_applescript(filenames, args.output_dir, folder_name)
+            exported, skipped = export_with_applescript(folder_info["items"], args.output_dir, folder_name)
+            total_exported += exported
+            total_skipped += skipped
 
-            if success:
-                print("✓")
+            if skipped:
+                print(f"✓ {exported:,} exported, {skipped:,} skipped")
             else:
-                print("✗ (failed)")
+                print(f"✓ {exported:,} exported")
 
         print()
-        print("Export complete.")
+        print(f"Export complete: {total_exported:,} exported, {total_skipped:,} skipped.")
+        if total_skipped:
+            print("Skipped items could not be resolved in Photos, or their filename no longer matches.")
 
         return 0
 

@@ -756,24 +756,63 @@ class TestSmartExport:
         """Test AppleScript generation (mocked execution)."""
         from smart_export import export_with_applescript
 
+        items = [{"uuid": "ABC-123", "filename": "IMG_001.heic"}]
         with patch("smart_export.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
-            result = export_with_applescript(["IMG_001.heic"], str(tmp_path), "2025")
+            mock_run.return_value.stdout = "EXPORTED:1 SKIPPED:0"
+            exported, skipped = export_with_applescript(items, str(tmp_path), "2025")
 
-        assert result is True
+        assert (exported, skipped) == (1, 0)
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         assert call_args[0][0][0] == "osascript"
 
+        # Assets are addressed by identifier, never by a filename search.
+        script = call_args[0][0][2]
+        assert '"ABC-123/L0/001"' in script
+        assert "media item id" in script
+        assert "search for" not in script
+
+    def test_export_with_applescript_reports_skips(self, tmp_path):
+        """An id that does not resolve is skipped, not silently counted as exported."""
+        from smart_export import export_with_applescript
+
+        items = [
+            {"uuid": "ABC-123", "filename": "IMG_001.heic"},
+            {"uuid": "DEF-456", "filename": "IMG_002.heic"},
+        ]
+        with patch("smart_export.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "EXPORTED:1 SKIPPED:1"
+            assert export_with_applescript(items, str(tmp_path)) == (1, 1)
+
+    def test_export_without_uuid_is_refused(self, tmp_path):
+        """Exporting by filename alone can exceed the planned set — refuse it."""
+        from smart_export import export_with_applescript
+
+        with patch("smart_export.subprocess.run") as mock_run, pytest.raises(ValueError, match="no UUID"):
+            export_with_applescript([{"filename": "IMG_001.heic"}], str(tmp_path))
+
+        mock_run.assert_not_called()
+
     def test_export_with_applescript_failure(self, tmp_path):
         from smart_export import export_with_applescript
 
+        items = [{"uuid": "ABC-123", "filename": "test.jpg"}]
         with patch("smart_export.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 1
             mock_run.return_value.stderr = "error"
-            result = export_with_applescript(["test.jpg"], str(tmp_path))
+            assert export_with_applescript(items, str(tmp_path)) == (0, 1)
 
-        assert result is False
+    def test_export_with_unparseable_output(self, tmp_path):
+        """A zero exit code with unexpected output must not be read as success."""
+        from smart_export import export_with_applescript
+
+        items = [{"uuid": "ABC-123", "filename": "test.jpg"}]
+        with patch("smart_export.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "something unexpected"
+            assert export_with_applescript(items, str(tmp_path)) == (0, 1)
 
 
 # ── Cleanup Executor (improve coverage) ──────────────────────────────────────
