@@ -14,7 +14,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.12", "3.13"]
+        python-version: ["3.9", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +31,26 @@ jobs:
         run: ruff check .
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short --cov=scripts --cov-report=term-missing
 
       - name: Check formatting
         run: ruff format --check .
+
+  # Separate job: mypy 2.x no longer runs on Python 3.9, and the type results are
+  # interpreter-independent, so there is nothing to gain from a matrix here.
+  typecheck:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install ".[dev]"
+
+      - name: Type check with mypy
+        run: mypy
