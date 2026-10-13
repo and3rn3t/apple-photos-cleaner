@@ -4,7 +4,15 @@ Analyze, audit, and clean up your Apple Photos library by querying its SQLite da
 
 Goes beyond what Photos.app offers: intelligent junk detection, detailed storage analysis, duplicate finding with quality scoring, timeline recaps, people analytics, location mapping, and more.
 
-> **Safety:** All operations are read-only database queries. No photos are modified or deleted without explicit user action through the cleanup executor.
+> **Safety:** Analysis commands are read-only — they query the Photos database over a read-only
+> connection and never write back to it. Two commands are **mutating** and drive Photos.app through
+> AppleScript: `cleanup_executor.py` moves items to Recently Deleted (previews by default; needs
+> `--execute` plus a typed `yes`), and `smart_export.py` writes exported copies to a directory you
+> choose. See [Safety & Privacy](#safety--privacy).
+
+> **Privacy:** Reports can include recognized people's names, face data, GPS coordinates, and
+> shared-library contributors. Everything stays on your Mac — nothing is uploaded — but be careful
+> where you save or share the JSON output. See [Safety & Privacy](#safety--privacy).
 
 ## Requirements
 
@@ -101,6 +109,50 @@ Apple Photos stores its metadata in a SQLite database at:
 ```
 
 This project queries that database in **read-only mode** to surface insights. Core Data timestamps (seconds since 2001-01-01) are converted to Python datetimes. ML-detected attributes like quality scores, scene classifications, and face data are all available in the database.
+
+## Safety & Privacy
+
+### What each command can do
+
+Everything except the two commands below is **read-only**: the database is opened with
+`mode=ro`, and nothing is written back to it.
+
+| Command | Effect | Gate |
+|---|---|---|
+| `cleanup_executor.py` | Moves items to **Recently Deleted** via Photos.app | Previews by default; needs `--execute` **and** a typed `yes`; capped by `--limit` (default 500) |
+| `smart_export.py` | Writes **exported copies** into `--output-dir` | Prompts before exporting; `--plan-only` to preview, `--yes` to skip the prompt |
+
+Neither command alters originals. Cleanup is recoverable from Recently Deleted for 30 days;
+export only creates new files.
+
+Both resolve assets by their stable `ZUUID` and re-check the filename after resolving, so a
+run can only ever touch assets you previewed. Filenames in Photos are not unique, and matching
+on them could otherwise reach photos outside the planned set.
+
+### What the reports contain
+
+Analysis is read-only but not low-sensitivity. Output can include:
+
+| Data | Commands |
+|---|---|
+| Recognized people's names | `people_analyzer.py`, `face_quality.py`, `location_mapper.py`, `timeline_recap.py`, `on_this_day.py`, `best_photos.py` |
+| Face detection and quality scores | `face_quality.py`, `people_analyzer.py` |
+| GPS coordinates and inferred trips | `location_mapper.py`, `scene_search.py`, `on_this_day.py`, `timeline_recap.py` |
+| Shared Library contributor identifiers | `shared_library.py` |
+| Behavioural patterns (when and how often you shoot) | `photo_habits.py`, `timeline_recap.py`, `library_analysis.py` |
+| Counts of hidden and favourited items | `library_analysis.py` |
+
+All processing is local — no network calls, no telemetry, no external dependencies. The
+sensitivity is in the **output**: JSON reports written with `--output` are plain files that
+inherit your umask. Treat them like the photos they describe, and prefer `--human` to stdout
+when you only want to read the result.
+
+### Permissions
+
+- Analysis needs read access to `Photos.sqlite` — grant Full Disk Access, or point `--db-path`
+  at a library you can already read.
+- The two mutating commands *additionally* need Automation permission for Photos.app. macOS
+  grants file access and automation separately, so expect a second prompt.
 
 ## License
 

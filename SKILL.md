@@ -1,8 +1,8 @@
 ---
 name: apple-photos-cleaner
-description: Analyze, clean up, and organize Apple Photos libraries. Find and report junk photos (screenshots, low-quality, burst leftovers, duplicates), analyze storage usage, generate photo timeline recaps, plan smart exports, analyze Live Photos, check iCloud sync, audit shared libraries, detect similar photos, curate seasonal highlights, and score face quality. All analysis operations are READ-ONLY on the database (safe). macOS only. Requires Python 3.9+ (stdlib only) and access to the Apple Photos SQLite database. Trigger on: Photos cleanup, photo storage, duplicate photos, junk photos, screenshot cleanup, Photos analysis, photo timeline, photo export, Photos library stats, burst cleanup, storage hogs, photo organization, Live Photos, iCloud sync, shared library, similar photos, seasonal highlights, face quality, portraits.
-license: MIT
-metadata: {"openclaw": {"os": ["darwin"], "emoji": "📸", "homepage": "https://github.com/and3rn3t/apple-photos-cleaner", "requires": {"bins": ["python3"]}}}
+description: Analyze, clean up, and organize Apple Photos libraries. Find and report junk photos (screenshots, low-quality, burst leftovers, duplicates), analyze storage usage, generate photo timeline recaps, plan smart exports, analyze Live Photos, check iCloud sync, audit shared libraries, detect similar photos, curate seasonal highlights, and score face quality. All analysis operations are READ-ONLY on the database (safe); the separate cleanup and export commands drive Photos.app via AppleScript and require explicit opt-in. macOS only. PRIVACY — reports can include recognized people's names, face data, GPS coordinates, and shared-library contributor identifiers; all processing is local with no network access, but written reports carry that data. Requires Python 3.9+ (stdlib only) and access to the Apple Photos SQLite database. Trigger on: Photos cleanup, photo storage, duplicate photos, junk photos, screenshot cleanup, Photos analysis, photo timeline, photo export, Photos library stats, burst cleanup, storage hogs, photo organization, Live Photos, iCloud sync, shared library, similar photos, seasonal highlights, face quality, portraits.
+version: 1.0.2
+metadata: {"openclaw": {"os": ["macos"], "emoji": "📸", "homepage": "https://github.com/and3rn3t/apple-photos-cleaner", "requires": {"bins": ["python3", "osascript"]}}}
 ---
 
 # Apple Photos Cleaner
@@ -34,7 +34,9 @@ Apple Photos is great at organizing and syncing photos, but it's not so great at
 - **Seasonal Highlights** — Curate the best photos per season using quality scores and favorites
 - **Face Quality Scoring** — Rank face photos per person: find best/worst portraits
 
-**Safety:** All operations are READ-ONLY database queries. No photos are modified or deleted without explicit user action.
+**Safety:** Every analysis command is read-only — reports are built from read-only SQLite queries and nothing is ever written back to the Photos database. Two commands are **mutating** and drive Photos.app through AppleScript automation: `smart_export.py` writes exported copies to a directory you choose, and `cleanup_executor.py` moves items to Recently Deleted. Cleanup previews by default and requires both the `--execute` flag and a typed `yes` confirmation. See [Safety & Permissions](#safety--permissions).
+
+**Privacy:** Read-only does not mean low-sensitivity. Reports can include recognized people's names, face detections, GPS coordinates, and Shared Library contributor identifiers. Everything is processed locally — no network calls, no telemetry — but the JSON you write with `--output` carries that data. See [Privacy](#privacy).
 
 ## When to Use This Skill
 
@@ -376,6 +378,7 @@ python3 scripts/smart_export.py --output-dir PATH [--organize-by MODE] [--plan-o
 - `--person NAME` — Export only photos with this person
 - `--album NAME` — Export only from this album
 - `--plan-only` — Show plan without exporting (recommended first step)
+- `--yes` — Skip the interactive confirmation prompt
 
 **Example Output:**
 ```
@@ -396,7 +399,7 @@ Folders:
   ...
 ```
 
-**Note:** Actual export via AppleScript is not fully implemented. This command generates the export plan and folder structure. For now, use this to identify what to export, then do it manually in Photos.app.
+**Mutating:** without `--plan-only` this command exports. It prints the plan, asks for confirmation on a TTY (`--yes` skips the prompt), then drives Photos.app via AppleScript to write copies into `--output-dir`. It creates new files only — the library is never altered. Each asset is resolved by its `ZUUID`, and the resolved item's filename is re-checked before export, so the run cannot reach photos outside the plan. The final line reports `exported` and `skipped` counts; items are skipped when their id no longer resolves in Photos or the filename no longer matches.
 
 **Usage in Conversation:**
 
@@ -1025,7 +1028,8 @@ python3 scripts/best_photos.py --year 2024 --top 20 --human
 # Plan export
 python3 scripts/smart_export.py --output-dir ~/Desktop/Photos-Export --favorites --start-date 2024-01-01 --plan-only
 
-# Review plan, then execute (manual for now)
+# Review the plan, then run the same command without --plan-only to export
+python3 scripts/smart_export.py --output-dir ~/Desktop/Photos-Export --favorites --start-date 2024-01-01
 ```
 
 ### Workflow 5: Deep Cleanup
@@ -1127,7 +1131,7 @@ python3 scripts/shared_library.py --output shared_report.json
 2. **Find junk** — Run `junk_finder.py` to quantify cleanup opportunities
 3. **Be specific** — Don't just say "you have junk photos," say "you have 287 screenshots older than 30 days (2.1 GB) that could be deleted"
 4. **Explain savings** — Always mention estimated storage savings
-5. **Guide to Photos.app** — Scripts identify candidates, but user must delete via Photos.app
+5. **Deleting is a separate, opt-in step** — analysis only identifies candidates. To act on them, use `cleanup_executor.py` (preview first, then `--execute` plus a typed `yes`), or let the user clean up in Photos.app
 
 ### When User Asks "What Did I Do?"
 
@@ -1185,16 +1189,60 @@ python3 scripts/shared_library.py --output shared_report.json
 
 ## Safety & Permissions
 
-- ✅ **All operations are READ-ONLY** — No photos are modified or deleted
-- ✅ **No external dependencies** — Pure Python stdlib
-- ✅ **No Photos.app API** — Direct SQLite reads (safe)
-- ⚠️ **Smart export uses AppleScript** — Requires Photos.app to be running
-- ⚠️ **Cleanup executor uses AppleScript** — Moves items to Recently Deleted (recoverable)
+**Read-only — every analysis command**
+
+- ✅ **The Photos database is never written** — connections are opened read-only (`mode=ro`)
+- ✅ **No external dependencies** — pure Python stdlib
+- ✅ **Safe to run alongside Photos.app**
+
+**Mutating — two commands, both opt-in**
+
+- ⚠️ **`cleanup_executor.py`** — moves items to **Recently Deleted** through Photos.app AppleScript automation. Previews by default; needs the `--execute` flag *and* a typed `yes` confirmation. Bounded by `--limit` (default 500). Items stay recoverable in Recently Deleted.
+- ⚠️ **`smart_export.py`** — writes exported copies into `--output-dir` through Photos.app AppleScript automation. Preview with `--plan-only`. It only creates new files; it never alters the library.
+
+**Permissions**
+
+- Analysis needs read access to `Photos.sqlite` (Full Disk Access, or access to the library itself)
+- The two mutating commands *additionally* need Automation permission for Photos.app — macOS grants file access and automation separately, so expect a second prompt
+
+## Privacy
+
+Analysis is read-only, but the reports it produces are **personal data about identifiable
+people** — the subjects of the photos, not just the person running the skill. Treat report
+files like the photos they describe.
+
+**What stays local**
+
+- No network calls, no telemetry, no external dependencies — the scripts import stdlib only
+- Nothing is uploaded; the only things written are the report file you name with `--output`
+  and, for `smart_export.py`, the exported copies
+
+**Per-command sensitivity**
+
+| Sensitivity | Commands | What the output can contain |
+|---|---|---|
+| 🔴 High | `people_analyzer.py`, `face_quality.py` | Recognized people's full names, per-person photo counts, face detections, blur/smile/yaw attributes, best/worst portrait rankings |
+| 🔴 High | `location_mapper.py` | Raw GPS coordinates, home/work clusters, inferred trips and travel dates, names of people at each place |
+| 🔴 High | `shared_library.py` | Shared Library contributor identifiers and what each person contributed |
+| 🟠 Medium | `timeline_recap.py`, `on_this_day.py` | Dated activity narratives combining people, places, and scene labels |
+| 🟠 Medium | `best_photos.py`, `seasonal_highlights.py`, `scene_search.py` | Scene labels, filenames, and (for some) people and coordinates |
+| 🟠 Medium | `photo_habits.py` | Behavioural patterns — when you are active, streaks, busiest days |
+| 🟡 Low | `library_analysis.py`, `storage_analyzer.py`, `junk_finder.py`, `duplicate_finder.py`, `album_auditor.py`, `live_photo_analyzer.py`, `icloud_status.py`, `similarity_finder.py` | Counts, sizes, filenames, album titles; `library_analysis.py` also lists top people and hidden/favourite counts |
+
+**Handling guidance**
+
+- Prefer `--human` to the terminal when you only want to read a result; reach for `--output`
+  only when a file is actually needed
+- Report files are written with your default umask — put them somewhere you'd put the photos
+- When summarising results in conversation, there is rarely a reason to echo raw GPS
+  coordinates or a full roster of names; aggregate instead
+- Shared Library reports describe *other people's* contributions — be especially careful
+  before sharing those
 
 ## Limitations
 
-- **Read-only analysis** — Scripts identify candidates, but cleanup must be confirmed by user
-- **Export via AppleScript** — Requires Photos.app to be running
+- **Analysis never deletes** — analysis commands only identify candidates; moving anything to Recently Deleted requires `cleanup_executor.py --execute` plus a typed confirmation
+- **Export via AppleScript** — Requires Photos.app and Automation permission; exports copies, never moves or alters originals
 - **Reverse geocoding** — Offline lookup covers ~100 major world cities; remote locations show coordinates
 - **Similarity detection** — Uses computed quality vectors (not pixel-level); O(n²) comparison limited by `--limit`
 - **Shared Library columns** — Requires macOS 13+ / iOS 16+ database format
