@@ -312,7 +312,7 @@ Examples:
   %(prog)s --output-dir ~/Pictures/Export --favorites --start-date 2025-01-01
 
   # Export photos with a specific person
-  %(prog)s --output-dir ~/Pictures/Export --person "Jonah" --organize-by person
+  %(prog)s --output-dir ~/Pictures/Export --person "Alex" --organize-by person
 
   # Export specific album
   %(prog)s --output-dir ~/Pictures/Export --album "Vacation 2025" --organize-by album

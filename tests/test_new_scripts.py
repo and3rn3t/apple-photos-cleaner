@@ -109,8 +109,8 @@ def create_full_test_db():
     # -- Insert sample data --
 
     # People
-    cursor.execute("INSERT INTO ZPERSON VALUES (1, 'Jonah', 100)")
-    cursor.execute("INSERT INTO ZPERSON VALUES (2, 'Silas', 80)")
+    cursor.execute("INSERT INTO ZPERSON VALUES (1, 'Alex', 100)")
+    cursor.execute("INSERT INTO ZPERSON VALUES (2, 'Sam', 80)")
     cursor.execute("INSERT INTO ZPERSON VALUES (3, NULL, 10)")  # unnamed
 
     # Albums
@@ -368,9 +368,9 @@ class TestPeopleAnalyzer:
             result = analyze_people(db_path="test", min_photos=1)
 
         assert result["summary"]["total_named_people"] >= 1
-        # Jonah should be in results (appears in photos 1, 2, 9)
+        # Alex should be in results (appears in photos 1, 2, 9)
         names = [p["name"] for p in result["people"]]
-        assert "Jonah" in names
+        assert "Alex" in names
         conn.close()
 
     def test_co_occurrences(self):
@@ -384,7 +384,7 @@ class TestPeopleAnalyzer:
             mock_db.return_value.__exit__ = MagicMock(return_value=False)
             result = analyze_people(db_path="test", min_photos=1)
 
-        # Jonah + Silas appear together in photo 1
+        # Alex + Sam appear together in photo 1
         if result["co_occurrences"]:
             pair = result["co_occurrences"][0]
             assert pair["shared_photos"] >= 1
@@ -395,13 +395,13 @@ class TestPeopleAnalyzer:
         from people_analyzer import format_summary
 
         data = {
-            "people": [{"name": "Jonah", "photo_count": 100, "favorites": 5, "by_year": {"2025": 50}}],
-            "co_occurrences": [{"person_1": "Jonah", "person_2": "Silas", "shared_photos": 30}],
+            "people": [{"name": "Alex", "photo_count": 100, "favorites": 5, "by_year": {"2025": 50}}],
+            "co_occurrences": [{"person_1": "Alex", "person_2": "Sam", "shared_photos": 30}],
             "summary": {"total_named_people": 2, "unnamed_face_photos": 10, "min_photos_threshold": 5},
         }
         output = format_summary(data)
         assert "👥" in output
-        assert "Jonah" in output
+        assert "Alex" in output
 
 
 # ===== Location Mapper Tests =====
@@ -664,7 +664,7 @@ class TestOnThisDay:
                     "years_ago": 2,
                     "photo_count": 5,
                     "favorites": 1,
-                    "people": [{"name": "Jonah", "count": 3}],
+                    "people": [{"name": "Alex", "count": 3}],
                     "scenes": [{"scene": "beach", "count": 2}],
                     "best_photo": {"filename": "IMG_001.heic", "quality_score": 0.9},
                 },
