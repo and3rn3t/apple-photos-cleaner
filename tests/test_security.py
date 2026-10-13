@@ -13,11 +13,24 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from _common import build_asset_query, build_identifier_lists, escape_applescript, sanitize_folder_name, validate_year
+from _common import (
+    DatabaseNotFoundError,
+    ExitCode,
+    SchemaUnsupportedError,
+    _deny_writes,
+    build_asset_query,
+    build_identifier_lists,
+    connect_db,
+    escape_applescript,
+    exit_code_for,
+    sanitize_folder_name,
+    validate_year,
+)
 
 HOSTILE_STRINGS = [
     'plain "quoted" name',
@@ -214,3 +227,136 @@ class TestSqlInjection:
         with pytest.raises(ValueError):
             build_asset_query(limit="1; DROP TABLE ZASSET")  # type: ignore[arg-type]
         assert build_asset_query(limit=5).endswith("LIMIT 5")
+
+
+# ── Read-only guard (T1.20) and exit codes (T1.9) ────────────────────────────
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_NAMES = sorted(p.stem for p in (REPO_ROOT / "scripts").glob("[a-z]*.py"))
+# Arguments that keep each script on its read-only path.
+SCRIPT_ARGS = {
+    "cleanup_executor": ["--category", "all_screenshots"],
+    "smart_export": ["--output-dir", "{tmp}", "--plan-only"],
+}
+# Scripts that still crash when an optional column is absent. T1.4 empties this.
+NOT_YET_DEGRADING = {"seasonal_highlights": "hardcodes optional ZCOMPUTEDASSETATTRIBUTES scores"}
+
+
+def run_cli(script: str, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / f"{script}.py"), *args],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=60,
+    )
+
+
+@pytest.fixture
+def db_file(full_db, tmp_path) -> Path:
+    """full_db written to disk, so scripts open it through connect_db."""
+    path = tmp_path / "Photos.sqlite"
+    target = sqlite3.connect(path)
+    full_db.backup(target)
+    target.close()
+    return path
+
+
+class TestReadOnlyGuard:
+    WRITES = (
+        "INSERT INTO ZASSET (Z_PK) VALUES (999)",
+        "UPDATE ZASSET SET ZFAVORITE = 1",
+        "DELETE FROM ZASSET",
+        "CREATE TABLE evil (x)",
+        "CREATE TEMP TABLE evil (x)",
+        "DROP TABLE ZASSET",
+        "ALTER TABLE ZASSET ADD COLUMN evil",
+        "ATTACH DATABASE ':memory:' AS evil",
+        "PRAGMA journal_mode = DELETE",
+        "PRAGMA writable_schema = ON",
+        "BEGIN IMMEDIATE",
+    )
+
+    @pytest.mark.parametrize("sql", WRITES)
+    def test_writes_are_denied(self, db_file, sql):
+        conn = connect_db(str(db_file))
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            conn.execute(sql)
+        conn.close()
+
+    @pytest.mark.parametrize("sql", WRITES[:4])
+    def test_authorizer_denies_even_without_read_only_mode(self, db_file, sql):
+        """The guard must hold on its own if a future change drops mode=ro."""
+        conn = sqlite3.connect(db_file)
+        conn.set_authorizer(_deny_writes)
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            conn.execute(sql)
+        conn.close()
+
+    def test_reads_are_allowed(self, db_file):
+        conn = connect_db(str(db_file))
+        assert conn.execute("SELECT count(*) FROM ZASSET").fetchone()[0] > 0
+        assert conn.execute("PRAGMA table_info(ZASSET)").fetchall()
+        assert conn.execute("SELECT name FROM pragma_table_info('ZASSET')").fetchall()
+        assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+        recursive = "WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r WHERE x < 3) SELECT max(x) FROM r"
+        assert conn.execute(recursive).fetchone()[0] == 3
+        conn.close()
+
+    @pytest.mark.parametrize(
+        "script",
+        [
+            pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=f"T1.4: {NOT_YET_DEGRADING[name]}"))
+            if name in NOT_YET_DEGRADING
+            else name
+            for name in SCRIPT_NAMES
+        ],
+    )
+    def test_every_script_runs_under_the_guard(self, script, db_file, tmp_path):
+        """Unit tests stub PhotosDB; this drives each real CLI through connect_db."""
+        args = [a.replace("{tmp}", str(tmp_path / "export")) for a in SCRIPT_ARGS.get(script, [])]
+        result = run_cli(script, "--db-path", str(db_file), *args)
+        assert "not authorized" not in result.stderr
+        assert result.returncode == ExitCode.OK, result.stderr
+
+
+class TestExitCodes:
+    @pytest.mark.parametrize("script", SCRIPT_NAMES)
+    def test_missing_database(self, script, tmp_path):
+        args = [a.replace("{tmp}", str(tmp_path)) for a in SCRIPT_ARGS.get(script, [])]
+        result = run_cli(script, "--db-path", str(tmp_path / "missing.sqlite"), *args)
+        assert result.returncode == ExitCode.DB_NOT_FOUND, result.stderr
+
+    @pytest.mark.parametrize("script", ["library_analysis", "cleanup_executor", "timeline_recap"])
+    def test_unknown_flag_is_usage_error(self, script):
+        assert run_cli(script, "--no-such-flag").returncode == ExitCode.USAGE
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
+    def test_unreadable_database(self, db_file):
+        db_file.chmod(0)
+        try:
+            result = run_cli("library_analysis", "--db-path", str(db_file))
+        finally:
+            db_file.chmod(0o600)
+        assert result.returncode == ExitCode.PERMISSION_DENIED
+        assert "Full Disk Access" in result.stderr
+
+    def test_invalid_argument_value_is_usage_error(self, db_file):
+        result = run_cli("on_this_day", "--db-path", str(db_file), "--date", "not-a-date")
+        assert result.returncode == ExitCode.USAGE, result.stderr
+
+    @pytest.mark.parametrize(
+        ("error", "code"),
+        [
+            (DatabaseNotFoundError("x"), ExitCode.DB_NOT_FOUND),
+            (FileNotFoundError("output dir"), ExitCode.ERROR),
+            (PermissionError("x"), ExitCode.PERMISSION_DENIED),
+            (SchemaUnsupportedError("x"), ExitCode.SCHEMA_UNSUPPORTED),
+            (KeyboardInterrupt(), ExitCode.USER_ABORTED),
+            (ValueError("x"), ExitCode.USAGE),
+            (sqlite3.OperationalError("locked"), ExitCode.ERROR),
+            (RuntimeError("x"), ExitCode.ERROR),
+        ],
+    )
+    def test_exception_mapping(self, error, code):
+        assert exit_code_for(error) == code

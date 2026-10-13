@@ -1249,13 +1249,28 @@ files like the photos they describe.
 - **Dates are local capture time** — Years, days, hours and `--year`/`--start-date`/`--end-date` use the time zone each photo was taken in; photos with no recorded zone fall back to this Mac's current zone
 - **Schema changes** — Apple may change database schema in future macOS versions
 
+## Exit Codes
+
+Every command exits with one of these codes, so branch on the code rather than parsing stderr.
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| 0 | Success | |
+| 1 | Unexpected error | Re-run with `--verbose` and report it |
+| 2 | Usage error (bad flag or value) | Fix the arguments |
+| 3 | Photos database not found | Pass `--library` or `--db-path` |
+| 4 | Permission denied | Grant Full Disk Access to the terminal or agent app |
+| 5 | Schema unsupported | This macOS version's library lacks a column the command needs; open an issue |
+| 10 | Cancelled by the user | |
+| 11 | Confirmation required | Reserved for mutating commands |
+
 ## Troubleshooting
 
-**"Database not found"**  
+**"Database not found"** (exit 3)  
 → Specify path with `--library ~/Path/To/Photos Library.photoslibrary`
 
-**"Permission denied"**  
-→ Close Photos.app first, or run script while Photos.app is open (read-only is safe)
+**"Permission denied"** (exit 4)  
+→ Grant Full Disk Access to the app running the command (System Settings > Privacy & Security > Full Disk Access). Photos.app can stay open; reads are safe
 
 **"No quality scores"**  
 → Not all photos have computed quality attributes; scripts handle NULLs gracefully

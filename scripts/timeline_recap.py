@@ -10,13 +10,16 @@ from datetime import date, timedelta
 from typing import Any
 
 from _common import (
+    ExitCode,
     PhotosDB,
     coredata_to_local,
     detect_face_schema,
     format_date_range,
+    handle_cli_error,
     has_timezone_offset,
     local_datetime_sql,
     output_json,
+    setup_logging,
     tz_offset_sql,
 )
 
@@ -343,6 +346,7 @@ Examples:
     parser.add_argument("-o", "--output", help="Output file")
 
     args = parser.parse_args()
+    setup_logging()
 
     try:
         db_path = args.db_path or args.library
@@ -370,15 +374,11 @@ Examples:
 
         return 0
 
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    except KeyboardInterrupt:
+        print("\nCancelled.", file=sys.stderr)
+        return ExitCode.USER_ABORTED
     except Exception as e:
-        print(f"Error generating timeline: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_cli_error(e)
 
 
 if __name__ == "__main__":

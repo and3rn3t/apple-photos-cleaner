@@ -15,9 +15,32 @@ import sys
 import traceback
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from enum import IntEnum
 from typing import Any
 
 logger = logging.getLogger("apple_photos_cleaner")
+
+
+class ExitCode(IntEnum):
+    """Process exit codes. Agents branch on these, so they are part of the CLI contract."""
+
+    OK = 0
+    ERROR = 1  # unexpected failure
+    USAGE = 2  # bad arguments (argparse also exits 2)
+    DB_NOT_FOUND = 3
+    PERMISSION_DENIED = 4  # usually missing Full Disk Access
+    SCHEMA_UNSUPPORTED = 5
+    USER_ABORTED = 10
+    CONFIRMATION_REQUIRED = 11
+
+
+class SchemaUnsupportedError(RuntimeError):
+    """The Photos database lacks something this command cannot run without."""
+
+
+class DatabaseNotFoundError(FileNotFoundError):
+    """No Photos.sqlite at the given or default location."""
+
 
 # Core Data reference date (January 1, 2001 00:00:00 UTC)
 CORE_DATA_EPOCH = datetime(2001, 1, 1, 0, 0, 0)
@@ -69,7 +92,7 @@ def find_photos_db(custom_path: str | None = None) -> str:
     if os.path.exists(default_db):
         return default_db
 
-    raise FileNotFoundError(
+    raise DatabaseNotFoundError(
         f"Photos database not found. Searched:\n  - {default_db}\nPlease specify the path using --library or --db-path"
     )
 
@@ -90,9 +113,16 @@ def connect_db(db_path: str) -> sqlite3.Connection:
         sqlite3.OperationalError: If connection fails
     """
     if not os.path.exists(db_path):
-        raise FileNotFoundError(f"Database not found: {db_path}")
-    if not os.access(db_path, os.R_OK):
-        raise PermissionError(f"Cannot read database (permission denied): {db_path}")
+        raise DatabaseNotFoundError(f"Database not found: {db_path}")
+    # os.access() doesn't see macOS privacy (TCC) denials; actually opening the file does.
+    try:
+        open(db_path, "rb").close()
+    except PermissionError as e:
+        raise PermissionError(
+            f"Cannot read database (permission denied): {db_path}\n"
+            "Hint: grant Full Disk Access to your terminal or agent app in "
+            "System Settings > Privacy & Security > Full Disk Access."
+        ) from e
 
     # Use read-only mode with URI; busy_timeout retries if Photos.app holds a lock
     uri = f"file:{db_path}?mode=ro"
@@ -103,8 +133,30 @@ def connect_db(db_path: str) -> sqlite3.Connection:
             f"Failed to open database: {db_path} — {e}\n"
             "Hint: Close Photos.app or check if the file is a valid SQLite database."
         ) from e
+    # Second line of defence behind mode=ro: refuse anything but reads at prepare time.
+    conn.set_authorizer(_deny_writes)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+_READ_ACTIONS = frozenset(
+    {
+        sqlite3.SQLITE_READ,
+        sqlite3.SQLITE_SELECT,
+        sqlite3.SQLITE_FUNCTION,
+        getattr(sqlite3, "SQLITE_RECURSIVE", 33),  # module constant added in Python 3.11
+    }
+)
+_READ_ONLY_PRAGMAS = frozenset({"table_info", "table_xinfo"})
+
+
+def _deny_writes(action: int, arg1: str | None, arg2: str | None, db_name: str | None, trigger: str | None) -> int:
+    """SQLite authorizer allowing only reads; every other statement fails to prepare."""
+    if action in _READ_ACTIONS:
+        return sqlite3.SQLITE_OK
+    if action == sqlite3.SQLITE_PRAGMA and arg1 in _READ_ONLY_PRAGMAS:
+        return sqlite3.SQLITE_OK
+    return sqlite3.SQLITE_DENY
 
 
 def coredata_to_datetime(timestamp: float | None) -> datetime | None:
@@ -505,12 +557,12 @@ def require_uuid_support(cursor: sqlite3.Cursor, operation: str) -> None:
         operation: Human-readable name of the caller, used in the error message.
 
     Raises:
-        RuntimeError: If ZASSET has no ZUUID column.
+        SchemaUnsupportedError: If ZASSET has no ZUUID column.
     """
     cursor.execute("PRAGMA table_info(ZASSET)")
     columns = {row[1] for row in cursor.fetchall()}
     if "ZUUID" not in columns:
-        raise RuntimeError(
+        raise SchemaUnsupportedError(
             f"ZASSET.ZUUID not found in this Photos database. {operation} cannot safely "
             "identify assets without it and will not run. Please open an issue with "
             "your macOS version."
@@ -603,7 +655,7 @@ def run_script(
         epilog:      Optional argparse epilog text (examples, etc.).
 
     Returns:
-        Exit code (0 = success, 1 = error).
+        An ExitCode.
     """
     parser = argparse.ArgumentParser(
         description=description,
@@ -633,19 +685,39 @@ def run_script(
             if not args.output:
                 print("\n" + format_fn(result), file=sys.stderr)
 
-        return 0
+        return ExitCode.OK
 
-    except FileNotFoundError as e:
-        logger.error("%s", e)
-        return 1
-    except ValueError as e:
-        logger.error("%s", e)
-        return 1
-    except sqlite3.OperationalError as e:
-        logger.error("Database error: %s", e)
-        return 1
+    except KeyboardInterrupt:
+        logger.error("Cancelled.")
+        return ExitCode.USER_ABORTED
     except Exception as e:
-        logger.error("Unexpected error: %s", e)
-        if logger.isEnabledFor(logging.DEBUG):
-            traceback.print_exc()
-        return 1
+        return handle_cli_error(e)
+
+
+def exit_code_for(error: BaseException) -> ExitCode:
+    """Map an exception to the documented exit code (see ExitCode)."""
+    if isinstance(error, DatabaseNotFoundError):
+        return ExitCode.DB_NOT_FOUND
+    if isinstance(error, PermissionError):
+        return ExitCode.PERMISSION_DENIED
+    if isinstance(error, SchemaUnsupportedError):
+        return ExitCode.SCHEMA_UNSUPPORTED
+    if isinstance(error, KeyboardInterrupt):
+        return ExitCode.USER_ABORTED
+    if isinstance(error, ValueError):
+        return ExitCode.USAGE
+    return ExitCode.ERROR
+
+
+def handle_cli_error(error: Exception) -> ExitCode:
+    """Log *error* for a CLI user and return its exit code."""
+    code = exit_code_for(error)
+    if isinstance(error, sqlite3.DatabaseError):
+        logger.error("Database error: %s", error)
+    elif code == ExitCode.ERROR:
+        logger.error("Unexpected error: %s", error)
+    else:
+        logger.error("%s", error)
+    if code == ExitCode.ERROR and logger.isEnabledFor(logging.DEBUG):
+        traceback.print_exc()
+    return code

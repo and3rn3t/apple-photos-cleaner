@@ -14,6 +14,18 @@ release is cut.
   protect, and the mitigation and test behind each one.
 - A deprecation policy in CONTRIBUTING.md (T0.16). Flags and JSON fields get one minor release
   of warnings before removal. Safety fixes are the only exception.
+- **Documented exit codes** (T1.9): 2 usage, 3 database not found, 4 permission
+  denied (with a Full Disk Access hint), 5 schema unsupported, 10 cancelled,
+  11 confirmation required. Previously every failure exited 1.
+- **Read-only guard** (T1.20): on top of `mode=ro`, every connection installs a
+  SQLite authorizer that refuses anything but reads, so a future bug cannot
+  write to `Photos.sqlite` even through a misopened connection.
+
+### Fixed
+
+- A missing Full Disk Access grant is now reported as permission denied.
+  macOS privacy denials are invisible to `os.access()`, so it used to surface as
+  an opaque SQLite open error.
 
 ## [1.0.3] - 2026-10-13
 
