@@ -6,23 +6,25 @@ Groups photos by day/event clusters and includes context like people, locations,
 
 import argparse
 import sys
-from datetime import date, datetime, timedelta
-from typing import Any, Optional
+from datetime import date, timedelta
+from typing import Any
 
 from _common import (
     PhotosDB,
-    coredata_to_datetime,
-    datetime_to_coredata,
+    coredata_to_local,
     detect_face_schema,
     format_date_range,
+    has_timezone_offset,
+    local_datetime_sql,
     output_json,
+    tz_offset_sql,
 )
 
 
 def generate_timeline(
-    db_path: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    db_path: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     cluster_hours: int = 4,
 ) -> dict[str, Any]:
     """
@@ -40,22 +42,20 @@ def generate_timeline(
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
+        tz_available = has_timezone_offset(cursor)
+        local_dt = local_datetime_sql(tz_available)
 
-        # Build date filters
+        # Date filters compare local capture time as text ("YYYY-MM-DD HH:MM:SS")
         where_clauses = ["a.ZTRASHEDSTATE != 1"]
         params: list = []
 
         if start_date:
-            dt = datetime.fromisoformat(start_date)
-            timestamp = datetime_to_coredata(dt)
-            where_clauses.append("a.ZDATECREATED >= ?")
-            params.append(timestamp)
+            where_clauses.append(f"{local_dt} >= ?")
+            params.append(f"{date.fromisoformat(start_date).isoformat()} 00:00:00")
 
         if end_date:
-            dt = datetime.fromisoformat(end_date + " 23:59:59")
-            timestamp = datetime_to_coredata(dt)
-            where_clauses.append("a.ZDATECREATED <= ?")
-            params.append(timestamp)
+            where_clauses.append(f"{local_dt} <= ?")
+            params.append(f"{date.fromisoformat(end_date).isoformat()} 23:59:59")
 
         # Get photos with metadata
         query = f"""
@@ -66,8 +66,10 @@ def generate_timeline(
                 a.ZKIND,
                 a.ZLATITUDE,
                 a.ZLONGITUDE,
-                a.ZFAVORITE
+                a.ZFAVORITE,
+                {tz_offset_sql(tz_available)} AS tz_offset
             FROM ZASSET a
+            LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
             WHERE {" AND ".join(where_clauses)}
             ORDER BY a.ZDATECREATED
         """
@@ -76,7 +78,7 @@ def generate_timeline(
         photos = []
 
         for row in cursor.fetchall():
-            created = coredata_to_datetime(row["ZDATECREATED"])
+            created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
             if created:
                 photos.append(
                     {
@@ -89,6 +91,9 @@ def generate_timeline(
                         "is_favorite": bool(row["ZFAVORITE"]),
                     }
                 )
+
+        # SQL orders by UTC; photos from different time zones can be out of order in local time
+        photos.sort(key=lambda p: p["created"])
 
         if not photos:
             return {
@@ -199,7 +204,7 @@ def generate_timeline(
 
         # Group events by day
         timeline = []
-        current_day: Optional[date] = None
+        current_day: date | None = None
         day_events: list[dict[str, Any]] = []
 
         for event in events:
@@ -329,8 +334,8 @@ Examples:
     )
     parser.add_argument("--db-path", help="Path to Photos.sqlite database")
     parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--start-date", help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end-date", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--start-date", help="Start date (YYYY-MM-DD, local capture time)")
+    parser.add_argument("--end-date", help="End date (YYYY-MM-DD, local capture time, inclusive)")
     parser.add_argument(
         "--cluster-hours", type=int, default=4, help="Hours between photos to consider separate events (default: 4)"
     )

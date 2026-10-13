@@ -1,7 +1,7 @@
 ---
 name: apple-photos-cleaner
-description: Analyze, clean up, and organize Apple Photos libraries. Find and report junk photos (screenshots, low-quality, burst leftovers, duplicates), analyze storage usage, generate photo timeline recaps, plan smart exports, analyze Live Photos, check iCloud sync, audit shared libraries, detect similar photos, curate seasonal highlights, and score face quality. All analysis operations are READ-ONLY on the database (safe); the separate cleanup and export commands drive Photos.app via AppleScript and require explicit opt-in. macOS only. PRIVACY — reports can include recognized people's names, face data, GPS coordinates, and shared-library contributor identifiers; all processing is local with no network access, but written reports carry that data. Requires Python 3.9+ (stdlib only) and access to the Apple Photos SQLite database. Trigger on: Photos cleanup, photo storage, duplicate photos, junk photos, screenshot cleanup, Photos analysis, photo timeline, photo export, Photos library stats, burst cleanup, storage hogs, photo organization, Live Photos, iCloud sync, shared library, similar photos, seasonal highlights, face quality, portraits.
-version: 1.0.2
+description: Analyze, clean up, and organize Apple Photos libraries. Find and report junk photos (screenshots, low-quality, burst leftovers, duplicates), analyze storage usage, generate photo timeline recaps, plan smart exports, analyze Live Photos, check iCloud sync, audit shared libraries, detect similar photos, curate seasonal highlights, and score face quality. All analysis operations are READ-ONLY on the database (safe); the separate cleanup and export commands drive Photos.app via AppleScript and require explicit opt-in. macOS only. PRIVACY — reports can include recognized people's names, face data, GPS coordinates, and shared-library contributor identifiers; all processing is local with no network access, but written reports carry that data. Requires Python 3.10+ (stdlib only) and access to the Apple Photos SQLite database. Trigger on: Photos cleanup, photo storage, duplicate photos, junk photos, screenshot cleanup, Photos analysis, photo timeline, photo export, Photos library stats, burst cleanup, storage hogs, photo organization, Live Photos, iCloud sync, shared library, similar photos, seasonal highlights, face quality, portraits.
+version: 1.0.3
 metadata: {"openclaw": {"os": ["macos"], "emoji": "📸", "homepage": "https://github.com/and3rn3t/apple-photos-cleaner", "requires": {"bins": ["python3", "osascript"]}}}
 ---
 
@@ -116,8 +116,8 @@ By Year:
   ...
 
 Top People:
-  Jonah: 3,456 photos
-  Silas: 3,234 photos
+  Alex: 3,456 photos
+  Sam: 3,234 photos
   ...
 ```
 
@@ -334,13 +334,13 @@ Events: 12
 
   🕐 09:15 (2h 15m)
      32 photos, 2 videos ⭐ 5 favorites
-     👥 Jonah, Silas
+     👥 Alex, Sam
      🏷️  swimming, pool, sports
      📍 41.5369, -90.5776
 
   🕐 18:30 (45m)
      13 photos
-     👥 Jonah, Silas
+     👥 Alex, Sam
      🏷️  dinner, food, family
 ```
 
@@ -357,7 +357,7 @@ Events: 12
 
 **AI Tip:** When presenting timeline results, narrate them like a story! Don't just dump the JSON. Example:
 
-> "You had a busy Saturday on March 1st! In the morning around 9:15, you spent about 2 hours at the pool — 32 photos with Jonah and Silas, mostly swimming and sports shots. You marked 5 as favorites. Then in the evening around 6:30, you captured a family dinner with 13 photos. Looks like a great day!"
+> "You had a busy Saturday on March 1st! In the morning around 9:15, you spent about 2 hours at the pool — 32 photos with Alex and Sam, mostly swimming and sports shots. You marked 5 as favorites. Then in the evening around 6:30, you captured a family dinner with 13 photos. Looks like a great day!"
 
 ---
 
@@ -406,8 +406,8 @@ Folders:
 **User:** "I want to export all my 2024 photos organized by month"  
 **AI:** *Runs smart_export.py with year filter and --plan-only, shows the plan*
 
-**User:** "Export all photos with Jonah"  
-**AI:** *Runs smart_export.py with --person "Jonah" and --plan-only, shows what would be exported*
+**User:** "Export all photos with Alex"  
+**AI:** *Runs smart_export.py with --person "Alex" and --plan-only, shows what would be exported*
 
 ---
 
@@ -500,14 +500,14 @@ Named people (≥5 photos): 15
 Photos with unnamed faces: 1,234
 
 Top People:
-  Jonah: 3,456 photos (★ 89)
+  Alex: 3,456 photos (★ 89)
     📅 2023:890, 2024:1,200, 2025:1,366
-  Silas: 3,234 photos (★ 76)
+  Sam: 3,234 photos (★ 76)
     📅 2023:845, 2024:1,100, 2025:1,289
 
 Frequently Photographed Together:
-  Jonah + Silas: 2,100 photos
-  Jonah + Mom: 456 photos
+  Alex + Sam: 2,100 photos
+  Alex + Mom: 456 photos
 ```
 
 **Usage in Conversation:**
@@ -555,7 +555,7 @@ Top Locations:
     1. (41.5369, -90.5776)
        1,234 photos ⭐12 🧳 | 5.2 GB
        📅 2020-01-15 → 2025-03-03
-       👥 Jonah, Silas
+       👥 Alex, Sam
 ```
 
 **Usage in Conversation:**
@@ -706,13 +706,13 @@ Photos found: 45 across 4 years
 
 📆 2025 (1 year ago)
    12 photos, ⭐ 3
-   👥 Jonah, Silas
+   👥 Alex, Sam
    🏷️  swimming, pool
    📸 Best: IMG_1234.jpg Q:0.89
 
 📆 2024 (2 years ago)
    8 photos
-   👥 Jonah
+   👥 Alex
    🏷️  park, outdoor
 ```
 
@@ -724,7 +724,7 @@ Photos found: 45 across 4 years
 **User:** "Show me memories from March 3"  
 **AI:** *Runs on_this_day.py --date 2026-03-03, tells the story*
 
-**AI Tip:** Narrate memories warmly! "2 years ago today, you were at the pool with Jonah and Silas — you took 12 photos and favorited 3 of them. The best shot has a quality score of 0.89!"
+**AI Tip:** Narrate memories warmly! "2 years ago today, you were at the pool with Alex and Sam — you took 12 photos and favorited 3 of them. The best shot has a quality score of 0.89!"
 
 ---
 
@@ -1156,8 +1156,8 @@ python3 scripts/shared_library.py --output shared_report.json
 ### When User Asks About People
 
 1. **Use people_analyzer** — Comprehensive people stats
-2. **Show co-occurrences** — "Jonah and Silas appear together in 2,100 photos"
-3. **Show trends** — "You photographed Jonah 40% less in 2025"
+2. **Show co-occurrences** — "Alex and Sam appear together in 2,100 photos"
+3. **Show trends** — "You photographed Alex 40% less in 2025"
 
 ### When User Asks "On This Day" / Memories
 
@@ -1182,7 +1182,7 @@ python3 scripts/shared_library.py --output shared_report.json
 
 ## Requirements
 
-- **Python:** 3.9+ (tested with 3.13)
+- **Python:** 3.10+ (tested with 3.10, 3.14, 3.15). Stock macOS `/usr/bin/python3` is 3.9 and too old — install a current one with `brew install python`
 - **Platform:** macOS only (Apple Photos database)
 - **Dependencies:** None (uses only Python stdlib)
 - **Database:** Read-only access to `~/Pictures/Photos Library.photoslibrary/database/Photos.sqlite`
@@ -1246,7 +1246,7 @@ files like the photos they describe.
 - **Reverse geocoding** — Offline lookup covers ~100 major world cities; remote locations show coordinates
 - **Similarity detection** — Uses computed quality vectors (not pixel-level); O(n²) comparison limited by `--limit`
 - **Shared Library columns** — Requires macOS 13+ / iOS 16+ database format
-- **Empty library support** — Scripts work on any library, but Matt's Mac mini library is empty (synced elsewhere)
+- **Dates are local capture time** — Years, days, hours and `--year`/`--start-date`/`--end-date` use the time zone each photo was taken in; photos with no recorded zone fall back to this Mac's current zone
 - **Schema changes** — Apple may change database schema in future macOS versions
 
 ## Troubleshooting
@@ -1263,15 +1263,9 @@ files like the photos they describe.
 **"Results don't match Photos.app counts"**  
 → Scripts exclude trashed items; Photos.app may show different views
 
-## Future Enhancements
+## Roadmap
 
-All previously planned features have been implemented! Possible further expansions:
-- Machine learning model export for custom photo classifiers
-- Photo deduplication across multiple Photos libraries
-- Integration with external photo services (Google Photos, Flickr)
-- Time-lapse generation from photo sequences
-- Custom smart album rule builder
-- Photo metadata repair / bulk editing suggestions
+Planned work, priorities and non-goals live in [ROADMAP.md](ROADMAP.md).
 
 ---
 

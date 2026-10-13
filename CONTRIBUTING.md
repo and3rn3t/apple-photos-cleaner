@@ -11,22 +11,26 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 ## Development Setup
 
-<!-- TODO: Replace these steps with your project's actual setup instructions. -->
-
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd YOUR_REPO
+git clone https://github.com/YOUR_USERNAME/apple-photos-cleaner.git
+cd apple-photos-cleaner
 
-# Install dependencies
-npm install        # TODO: Replace with your install command
+# Create a virtualenv on a supported Python (see the policy below) and install the dev toolchain
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 
-# Run tests
-npm test           # TODO: Replace with your test command
-
-# Start development server
-npm run dev        # TODO: Replace with your dev command
+# Run the checks CI runs
+ruff check . && ruff format --check . && mypy && pytest
 ```
+
+### Python version policy
+
+- The floor is **Python 3.10**. Stock macOS `/usr/bin/python3` (Command Line Tools, 3.9) is too old;
+  install a current Python with `brew install python` or python.org.
+- CI tests the floor plus the latest two releases.
+- The floor rises when a version reaches end-of-life. A floor change is called out in the CHANGELOG
+  and moves `requires-python`, ruff's `target-version`, and the CI matrix together.
 
 ## Branch Naming
 
@@ -82,7 +86,7 @@ This project uses shared code style guidelines enforced through:
 Run the linter before submitting:
 
 ```bash
-npm run lint       # TODO: Replace with your lint command
+ruff check . && ruff format --check . && mypy
 ```
 
 ## Testing
@@ -92,7 +96,7 @@ All new code should include tests. Follow the patterns documented in:
 - [Testing instructions](.github/instructions/testing.instructions.md) — Unit test patterns and conventions
 
 ```bash
-npm test           # TODO: Replace with your test command
+pytest
 ```
 
 ## AI-Assisted Development

@@ -7,14 +7,24 @@ A richer version of Apple's Memories with people, scenes, and quality context.
 import sys
 from collections import defaultdict
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
-from _common import PhotosDB, coredata_to_datetime, detect_face_schema, format_size, get_quality_score, run_script
+from _common import (
+    PhotosDB,
+    coredata_to_local,
+    detect_face_schema,
+    format_size,
+    get_quality_score,
+    has_timezone_offset,
+    local_datetime_sql,
+    run_script,
+    tz_offset_sql,
+)
 
 
 def on_this_day(
-    db_path: Optional[str] = None,
-    target_date: Optional[str] = None,
+    db_path: str | None = None,
+    target_date: str | None = None,
     window_days: int = 0,
 ) -> dict[str, Any]:
     """
@@ -39,6 +49,8 @@ def on_this_day(
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
+        tz_available = has_timezone_offset(cursor)
+        local_dt = local_datetime_sql(tz_available)
 
         # Build date matching condition
         if window_days > 0:
@@ -51,16 +63,16 @@ def on_this_day(
 
                     d = d + timedelta(days=offset)
                     date_conditions.append(
-                        f"(CAST(strftime('%m', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) AS INTEGER) = {d.month} "
-                        f"AND CAST(strftime('%d', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) AS INTEGER) = {d.day})"
+                        f"(CAST(strftime('%m', {local_dt}) AS INTEGER) = {d.month} "
+                        f"AND CAST(strftime('%d', {local_dt}) AS INTEGER) = {d.day})"
                     )
                 except ValueError:
                     continue
             date_filter = "(" + " OR ".join(date_conditions) + ")"
         else:
             date_filter = (
-                f"CAST(strftime('%m', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) AS INTEGER) = {month} "
-                f"AND CAST(strftime('%d', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) AS INTEGER) = {day}"
+                f"CAST(strftime('%m', {local_dt}) AS INTEGER) = {month} "
+                f"AND CAST(strftime('%d', {local_dt}) AS INTEGER) = {day}"
             )
 
         # Exclude current year's photos (we want memories, not today's photos)
@@ -80,13 +92,14 @@ def on_this_day(
                 ca.ZFAILURESCORE,
                 ca.ZNOISESCORE,
                 ca.ZPLEASANTCOMPOSITIONSCORE,
-                ca.ZPLEASANTLIGHTINGSCORE
+                ca.ZPLEASANTLIGHTINGSCORE,
+                {tz_offset_sql(tz_available)} AS tz_offset
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
             LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
             WHERE a.ZTRASHEDSTATE != 1
             AND {date_filter}
-            AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) != ?
+            AND strftime('%Y', {local_dt}) != ?
             ORDER BY a.ZDATECREATED DESC
         """
 
@@ -97,7 +110,7 @@ def on_this_day(
         total_photos = 0
 
         for row in cursor.fetchall():
-            created = coredata_to_datetime(row["ZDATECREATED"])
+            created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
             if not created:
                 continue
 

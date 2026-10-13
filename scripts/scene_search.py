@@ -6,17 +6,26 @@ Search by content type (beach, sunset, dog, food), generate content inventory.
 
 import sys
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
-from _common import PhotosDB, coredata_to_datetime, format_size, run_script, validate_year
+from _common import (
+    PhotosDB,
+    coredata_to_local,
+    format_size,
+    has_timezone_offset,
+    local_datetime_sql,
+    run_script,
+    tz_offset_sql,
+    validate_year,
+)
 
 
 def search_scenes(
-    db_path: Optional[str] = None,
-    search_term: Optional[str] = None,
+    db_path: str | None = None,
+    search_term: str | None = None,
     min_confidence: float = 0.0,
     top_n: int = 50,
-    year: Optional[str] = None,
+    year: str | None = None,
 ) -> dict[str, Any]:
     """
     Search photos by scene classification or generate content inventory.
@@ -33,22 +42,29 @@ def search_scenes(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         year_filter = ""
         year_params: list = []
         if year:
             year = validate_year(year)
-            year_filter = "AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?"
+            year_filter = f"AND strftime('%Y', {local_datetime_sql(tz_available)}) = ?"
             year_params = [year]
 
         if search_term:
-            return _search_by_scene(cursor, search_term, min_confidence, top_n, year_filter, year_params)
+            return _search_by_scene(cursor, search_term, min_confidence, top_n, year_filter, year_params, tz_available)
         else:
             return _generate_inventory(cursor, min_confidence, year_filter, year_params)
 
 
 def _search_by_scene(
-    cursor, search_term: str, min_confidence: float, top_n: int, year_filter: str, year_params: list
+    cursor,
+    search_term: str,
+    min_confidence: float,
+    top_n: int,
+    year_filter: str,
+    year_params: list,
+    tz_available: bool = False,
 ) -> dict[str, Any]:
     """Search photos matching a specific scene classification."""
     query = f"""
@@ -61,6 +77,7 @@ def _search_by_scene(
             a.ZLATITUDE,
             a.ZLONGITUDE,
             aa.ZORIGINALFILESIZE,
+            {tz_offset_sql(tz_available)} AS tz_offset,
             sc.ZSCENENAME,
             sc.ZCONFIDENCE
         FROM ZASSET a
@@ -80,7 +97,7 @@ def _search_by_scene(
     results = []
     total_size = 0
     for row in cursor.fetchall():
-        created = coredata_to_datetime(row["ZDATECREATED"])
+        created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
         size = row["ZORIGINALFILESIZE"] or 0
         total_size += size
 
@@ -105,6 +122,7 @@ def _search_by_scene(
         SELECT COUNT(*) as total
         FROM ZASSET a
         JOIN ZSCENECLASSIFICATION sc ON a.Z_PK = sc.ZASSET
+        LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
         WHERE a.ZTRASHEDSTATE != 1
         AND LOWER(sc.ZSCENENAME) LIKE ?
         AND (sc.ZCONFIDENCE >= ? OR sc.ZCONFIDENCE IS NULL)
@@ -159,6 +177,7 @@ def _generate_inventory(cursor, min_confidence: float, year_filter: str, year_pa
             AVG(sc.ZCONFIDENCE) as avg_confidence
         FROM ZSCENECLASSIFICATION sc
         JOIN ZASSET a ON sc.ZASSET = a.Z_PK
+        LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
         WHERE a.ZTRASHEDSTATE != 1
         AND sc.ZSCENENAME IS NOT NULL
         AND (sc.ZCONFIDENCE >= ? OR sc.ZCONFIDENCE IS NULL)
@@ -309,7 +328,7 @@ def main():
         parser.add_argument("--search", help="Scene name to search for")
         parser.add_argument("--min-confidence", type=float, default=0.0, help="Minimum confidence score (default: 0.0)")
         parser.add_argument("--top", type=int, default=50, help="Number of search results (default: 50)")
-        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+        parser.add_argument("--year", help="Filter to specific year (YYYY, local capture time)")
 
     def invoke(db_path, args):
         return search_scenes(

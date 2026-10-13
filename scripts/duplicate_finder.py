@@ -5,20 +5,22 @@ Find duplicate photos and suggest which to keep based on quality scores.
 
 import sys
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
     get_quality_score,
+    has_timezone_offset,
     is_favorite,
     is_screenshot,
     run_script,
+    tz_offset_sql,
 )
 
 
-def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
+def find_duplicates(db_path: str | None = None) -> dict[str, Any]:
     """
     Find duplicate photos using multiple detection methods.
 
@@ -27,11 +29,12 @@ def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         duplicate_groups = []
 
         # Method 1: Apple's built-in duplicate detection
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
@@ -42,6 +45,7 @@ def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
                 a.ZISDETECTEDSCREENSHOT,
                 a.ZDUPLICATEASSETVISIBILITYSTATE,
                 aa.ZORIGINALFILESIZE,
+                {tz_offset_sql(tz_available)} AS tz_offset,
                 ca.ZFAILURESCORE,
                 ca.ZNOISESCORE,
                 ca.ZPLEASANTCOMPOSITIONSCORE,
@@ -68,7 +72,7 @@ def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
                 duplicate_groups.append(group)
 
         # Method 2: Same timestamp + same dimensions
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
@@ -78,6 +82,7 @@ def find_duplicates(db_path: Optional[str] = None) -> dict[str, Any]:
                 a.ZFAVORITE,
                 a.ZISDETECTEDSCREENSHOT,
                 aa.ZORIGINALFILESIZE,
+                {tz_offset_sql(tz_available)} AS tz_offset,
                 ca.ZFAILURESCORE,
                 ca.ZNOISESCORE,
                 ca.ZPLEASANTCOMPOSITIONSCORE,
@@ -143,7 +148,7 @@ def create_duplicate_group(items: list[Any], detection_method: str) -> dict[str,
     processed_items = []
 
     for item in items:
-        created = coredata_to_datetime(item["ZDATECREATED"])
+        created = coredata_to_local(item["ZDATECREATED"], item["tz_offset"])
         quality = get_quality_score(item)
 
         processed_items.append(

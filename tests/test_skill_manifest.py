@@ -13,6 +13,7 @@ Schema reference: https://docs.openclaw.ai/clawhub/skill-format
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_PATH = REPO_ROOT / "SKILL.md"
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
+CHANGELOG_PATH = REPO_ROOT / "CHANGELOG.md"
 
 SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -153,3 +155,34 @@ class TestOpenClawMetadata:
             used.update(re.findall(r'os\.getenv\(\s*["\']([A-Za-z_][A-Za-z0-9_]*)', source))
 
         assert not (used - declared), f"env vars read by scripts but undeclared: {sorted(used - declared)}"
+
+
+class TestChangelog:
+    """Merging a version bump publishes it, so its CHANGELOG entry must be final.
+
+    The PR that bumps SKILL.md *is* the release: clawhub-publish.yml ships it
+    the moment it lands on main. An entry still reading "Unreleased" would
+    publish with an unfinished changelog, so CI fails until it is dated.
+    """
+
+    def test_current_version_has_a_dated_entry(self, frontmatter: dict) -> None:
+        version = frontmatter["version"]
+        changelog = CHANGELOG_PATH.read_text(encoding="utf-8")
+        heading = re.search(rf"^## \[{re.escape(version)}\] - (.+)$", changelog, re.MULTILINE)
+        assert heading, f"CHANGELOG.md has no '## [{version}] - YYYY-MM-DD' entry for the version in SKILL.md"
+
+        stamp = heading.group(1).strip()
+        try:
+            date.fromisoformat(stamp)
+        except ValueError:
+            raise AssertionError(
+                f"CHANGELOG.md entry for {version} is dated {stamp!r}; set it to the release (merge) date as "
+                "YYYY-MM-DD before merging, since merging publishes to ClawHub (see RELEASING.md)"
+            ) from None
+
+    def test_current_version_has_a_compare_link(self, frontmatter: dict) -> None:
+        version = frontmatter["version"]
+        changelog = CHANGELOG_PATH.read_text(encoding="utf-8")
+        assert re.search(rf"^\[{re.escape(version)}\]: https://", changelog, re.MULTILINE), (
+            f"CHANGELOG.md needs a '[{version}]: https://...' compare link at the bottom"
+        )

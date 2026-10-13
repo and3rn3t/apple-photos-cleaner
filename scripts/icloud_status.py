@@ -7,14 +7,16 @@ download status, and potential sync issues.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
     _safe_col,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
+    has_timezone_offset,
     run_script,
+    tz_offset_sql,
 )
 
 # iCloud local state values
@@ -28,7 +30,7 @@ CLOUD_STATE_NAMES = {
 
 
 def analyze_icloud_status(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
 ) -> dict[str, Any]:
     """
     Analyze iCloud sync status of all assets.
@@ -38,6 +40,7 @@ def analyze_icloud_status(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         # Check available columns
         cursor.execute("PRAGMA table_info(ZASSET)")
@@ -68,6 +71,7 @@ def analyze_icloud_status(
             "a.ZFAVORITE",
             "a.ZCLOUDLOCALSTATE",
             "aa.ZORIGINALFILESIZE",
+            f"{tz_offset_sql(tz_available)} AS tz_offset",
         ]
         if has_cloud_asset:
             select_cols.append("a.ZCLOUDISMYASSET")
@@ -112,7 +116,7 @@ def analyze_icloud_status(
             if kind_name not in by_kind:
                 by_kind[kind_name] = {"synced": 0, "local_only": 0, "synced_size": 0, "local_size": 0}
 
-            created = coredata_to_datetime(rd["ZDATECREATED"])
+            created = coredata_to_local(rd["ZDATECREATED"], rd["tz_offset"])
             yr = str(created.year) if created else "Unknown"
             if yr not in by_year:
                 by_year[yr] = {"synced": 0, "local_only": 0, "synced_size": 0, "local_size": 0}

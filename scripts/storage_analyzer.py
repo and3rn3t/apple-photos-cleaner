@@ -4,12 +4,21 @@ Detailed storage analysis: by year, type, source, growth trends, storage hogs.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
-from _common import PhotosDB, coredata_to_datetime, format_size, get_asset_kind_name, run_script
+from _common import (
+    PhotosDB,
+    coredata_to_local,
+    format_size,
+    get_asset_kind_name,
+    has_timezone_offset,
+    local_datetime_sql,
+    run_script,
+    tz_offset_sql,
+)
 
 
-def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
+def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
     """
     Perform detailed storage analysis.
 
@@ -18,6 +27,8 @@ def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
+        local_dt = local_datetime_sql(tz_available)
 
         # Total storage
         cursor.execute("""
@@ -54,9 +65,9 @@ def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
             }
 
         # By year
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
-                strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) as year,
+                strftime('%Y', {local_dt}) as year,
                 COUNT(*) as count,
                 SUM(aa.ZORIGINALFILESIZE) as total_bytes
             FROM ZASSET a
@@ -78,9 +89,9 @@ def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
             }
 
         # By year and month (for growth analysis)
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
-                strftime('%Y-%m', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) as year_month,
+                strftime('%Y-%m', {local_dt}) as year_month,
                 COUNT(*) as count,
                 SUM(aa.ZORIGINALFILESIZE) as total_bytes
             FROM ZASSET a
@@ -130,7 +141,7 @@ def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
             }
 
         # Storage hogs (top 20 largest files)
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
@@ -138,7 +149,8 @@ def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
                 a.ZKIND,
                 aa.ZORIGINALFILESIZE,
                 aa.ZORIGINALWIDTH,
-                aa.ZORIGINALHEIGHT
+                aa.ZORIGINALHEIGHT,
+                {tz_offset_sql(tz_available)} AS tz_offset
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
             WHERE a.ZTRASHEDSTATE != 1
@@ -149,7 +161,7 @@ def analyze_storage(db_path: Optional[str] = None) -> dict[str, Any]:
 
         storage_hogs = []
         for row in cursor.fetchall():
-            created = coredata_to_datetime(row["ZDATECREATED"])
+            created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
             storage_hogs.append(
                 {
                     "id": row["Z_PK"],

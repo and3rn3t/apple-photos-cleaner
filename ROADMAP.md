@@ -4,8 +4,9 @@ Where `apple-photos-cleaner` goes after 1.0. It starts with maintenance and buil
 moonshots. Each tier assumes the tiers below it are mostly done. Pick work from the lowest tier
 that still has open items unless something higher is blocking a release.
 
-> Status as of 2026-10-12: **v1.0.2** on ClawHub. 20 scripts, stdlib-only, read-only analysis +
-> two opt-in mutating commands. ~85% coverage, CI on macOS × Python 3.9–3.14.
+> Status as of 2026-10-13: **v1.0.3** (hygiene patch) ready to ship; v1.0.2 on ClawHub. 20 scripts,
+> stdlib-only, read-only analysis + two opt-in mutating commands. ~85% coverage, CI on macOS ×
+> Python 3.10 / 3.14 / 3.15. ✅ marks shipped items.
 
 ---
 
@@ -13,7 +14,7 @@ that still has open items unless something higher is blocking a release.
 
 | Now (next ~6 weeks) | Next (this half) | Later (this year and beyond) |
 | --- | --- | --- |
-| Fix local-time date math | Unified `photos-cleaner` CLI | Native Swift helper (PhotoKit + Vision) |
+| ~~Fix local-time date math~~ ✅ | Unified `photos-cleaner` CLI | Native Swift helper (PhotoKit + Vision) |
 | Mutation confirmation tokens | Versioned JSON schemas | Perceptual duplicates, OCR, semantic search |
 | Schema registry + `doctor` | Undo journal + protection rules | HTML dashboard, Year in Review |
 | SKILL.md diet (≤ 250 lines) | Demo library + Homebrew/pipx install | MCP server, Library Butler, auto-documentary |
@@ -60,19 +61,19 @@ macOS release.
 
 | ID | Item | Size | Done when |
 | --- | --- | --- | --- |
-| T0.1 ⭐ | **Fix UTC-only date math.** `coredata_to_datetime` ([_common.py:107](scripts/_common.py#L107)) returns naive UTC, and every `strftime(... 'unixepoch')` query skips `'localtime'`. As a result, peak hour, On This Day, streaks, seasonal buckets and year boundaries are all shifted for anyone not on UTC. Use the per-asset time zone offset where the schema has one and fall back to the system zone | M | A photo taken at 23:30 local on Dec 31 lands in the right year/day/hour; regression tests cover +/- offset fixtures |
-| T0.2 | **Remove personal references from public docs.** [SKILL.md:1249](SKILL.md#L1249) mentions a specific person's machine; example output uses real family names | S | No personal names or machines in shipped files; a test greps for a denylist |
-| T0.3 | **Drop the irrelevant Lighthouse workflow.** This is a Python CLI, not a site | S | Workflow removed or excluded by the consistency guard |
-| T0.4 | **Replace the stale "Future Enhancements" section** in SKILL.md with a link to this file | S | SKILL.md points here; no duplicated wish list |
-| T0.5 | **Audit SKILL.md claims against code.** Every flag, default and output field documented in SKILL.md/README actually exists | S | A test parses each script's `argparse` and diffs against the documented flags |
+| T0.1 ⭐ ✅ | **Fix UTC-only date math.** `coredata_to_datetime` ([_common.py:107](scripts/_common.py#L107)) returns naive UTC, and every `strftime(... 'unixepoch')` query skips `'localtime'`. As a result, peak hour, On This Day, streaks, seasonal buckets and year boundaries are all shifted for anyone not on UTC. Use the per-asset time zone offset where the schema has one and fall back to the system zone | M | A photo taken at 23:30 local on Dec 31 lands in the right year/day/hour; regression tests cover +/- offset fixtures |
+| T0.2 ✅ | **Remove personal references from public docs.** [SKILL.md:1249](SKILL.md#L1249) mentions a specific person's machine; example output uses real family names | S | No personal names or machines in shipped files; a test greps for a denylist |
+| T0.3 ✅ | **Drop the irrelevant Lighthouse workflow.** This is a Python CLI, not a site | S | Workflow removed or excluded by the consistency guard |
+| T0.4 ✅ | **Replace the stale "Future Enhancements" section** in SKILL.md with a link to this file | S | SKILL.md points here; no duplicated wish list |
+| T0.5 ✅ | **Audit SKILL.md claims against code.** Every flag, default and output field documented in SKILL.md/README actually exists | S | A test parses each script's `argparse` and diffs against the documented flags |
 
 ### Supply chain & security
 
 | ID | Item | Size | Done when |
 | --- | --- | --- | --- |
-| T0.6 | **Pin GitHub Actions by SHA.** Renovate keeps the pins fresh | S | No `@v4`-style refs in workflows |
+| T0.6 ✅ | **Pin GitHub Actions by SHA.** Renovate keeps the pins fresh | S | No `@v4`-style refs in workflows |
 | T0.7 | **Release provenance.** Build release archives in CI with artifact attestations + an SBOM; checksums in release notes | S | Every GitHub release has attestation and `SHA256SUMS` |
-| T0.8 | **Security regression tests.** AppleScript injection (filenames with quotes, backslashes, newlines, Unicode), path traversal in `--output-dir`, SQL built from user input | S | A dedicated `tests/test_security.py`; CodeQL stays clean |
+| T0.8 ✅ | **Security regression tests.** AppleScript injection (filenames with quotes, backslashes, newlines, Unicode), path traversal in `--output-dir`, SQL built from user input | S | A dedicated `tests/test_security.py`; CodeQL stays clean |
 | T0.9 | **Threat model doc.** What the skill trusts (DB contents, filenames, album titles, agent input) and why | S | `docs/threat-model.md` linked from SECURITY.md |
 
 ### Cadence
@@ -81,8 +82,8 @@ macOS release.
 | --- | --- | --- | --- |
 | T0.10 | **Dependency triage.** Keep the Renovate Dependency Dashboard (#3) at zero stale PRs | S, recurring | Monthly sweep; no dependency PR older than 30 days |
 | T0.11 | **Annual macOS beta smoke test.** Every June, run the suite plus a manual pass against a beta library | M, recurring | A `docs/compat.md` row per macOS version with pass/fail per script |
-| T0.12 | **Python version policy.** 3.9 is EOL. Decide the floor (3.10 recommended), update `requires-python`, ruff `target-version`, and CI matrix | S | Floor documented; CI matrix = floor + latest two |
-| T0.13 | **Release checklist + CHANGELOG.** Keep-a-Changelog, backfilled to 1.0.0; version bump, tag, ClawHub publish verification, release-drafter notes | S | `RELEASING.md` and `CHANGELOG.md` exist; every release follows them |
+| T0.12 ✅ | **Python version policy.** 3.9 is EOL. Decide the floor (3.10 recommended), update `requires-python`, ruff `target-version`, and CI matrix | S | Floor documented; CI matrix = floor + latest two |
+| T0.13 ✅ | **Release checklist + CHANGELOG.** Keep-a-Changelog, backfilled to 1.0.0; version bump, tag, ClawHub publish verification, release-drafter notes | S | `RELEASING.md` and `CHANGELOG.md` exist; every release follows them |
 | T0.14 | **Coverage ratchet.** Raise `fail_under` from 80 as coverage climbs | S, recurring | Ratchet bumped whenever actual coverage is ≥ 3 points above it |
 | T0.15 | **Issue triage SLA.** Label and respond to new issues within a week | S, recurring | No unlabeled issue older than 7 days |
 | T0.16 | **Deprecation policy.** Flags and JSON fields get one minor release of warnings before removal | S | Policy in CONTRIBUTING.md; deprecations emit to `warnings` in JSON |
@@ -360,7 +361,7 @@ Semver: a new JSON field is a minor; a removed or renamed one is a major.
 
 | Release | Theme | Scope |
 | --- | --- | --- |
-| **1.0.3** | Hygiene patch | T0.1–T0.6, T0.8, T0.12, T0.13 |
+| **1.0.3** ✅ | Hygiene patch | T0.1–T0.6, T0.8, T0.12, T0.13 |
 | **1.1** | Solid ground | T1.1, T1.2, T1.4, T1.9, T1.10, T1.19, T1.20, T1.23 |
 | **1.2** | One CLI | T1.6–T1.8, T1.14–T1.16, T1.18, T1.25, T2.23, D.1 |
 | **1.3** | Safe cleanup | T2.1–T2.4, T2.6–T2.8, T1.21, T3.1 |
@@ -398,7 +399,7 @@ Semver: a new JSON field is a minor; a removed or renamed one is a major.
 
 ### Open questions
 
-1. Python floor: keep 3.9 for older macOS, or move to 3.10+?
+1. ~~Python floor: keep 3.9 for older macOS, or move to 3.10+?~~ Decided: 3.10 (1.0.3, T0.12).
 2. HTML report (T3.2): static file or local web server?
 3. MCP server (T5.2): bundled here or in a sibling repo?
 4. Which on-device embedding model for T4.10, and what size can we bundle?

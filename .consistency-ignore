@@ -1,0 +1,3 @@
+# Intentional deviations from the ai-template-repo baseline (see tools/README.md).
+# Lighthouse audits websites; this is a Python CLI with nothing to audit.
+.github/workflows/lighthouse.yml

@@ -5,21 +5,23 @@ Find junk photos: screenshots, low-quality images, burst leftovers, old screensh
 
 import sys
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
     build_asset_query,
-    coredata_to_datetime,
+    coredata_to_local,
     datetime_to_coredata,
     format_size,
     get_quality_score,
+    has_timezone_offset,
     run_script,
+    tz_offset_sql,
 )
 
 
 def find_junk(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     screenshot_age_days: int = 30,
     quality_threshold: float = 0.3,
     include_duplicates: bool = True,
@@ -38,6 +40,7 @@ def find_junk(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         results: dict[str, Any] = {
             "screenshots": [],
@@ -53,6 +56,7 @@ def find_junk(
         query = build_asset_query(
             where_clauses=["a.ZTRASHEDSTATE != 1", "a.ZISDETECTEDSCREENSHOT = 1"],
             join_additional=True,
+            tz_offset_available=tz_available,
             order_by="a.ZDATECREATED DESC",
         )
         cursor.execute(query)
@@ -65,7 +69,7 @@ def find_junk(
         for row in cursor.fetchall():
             asset_id = row["Z_PK"]
             filename = row["ZFILENAME"]
-            created = coredata_to_datetime(row["ZDATECREATED"])
+            created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
             size = row["ZORIGINALFILESIZE"] or 0
 
             screenshot_size += size
@@ -93,6 +97,7 @@ def find_junk(
                 "a.ZISDETECTEDSCREENSHOT != 1",  # exclude screenshots
             ],
             join_additional=True,
+            tz_offset_available=tz_available,
             join_computed=True,
             order_by="ca.ZFAILURESCORE DESC",
         )
@@ -104,7 +109,7 @@ def find_junk(
             if quality is not None and quality < quality_threshold:
                 asset_id = row["Z_PK"]
                 filename = row["ZFILENAME"]
-                created = coredata_to_datetime(row["ZDATECREATED"])
+                created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
                 size = row["ZORIGINALFILESIZE"] or 0
 
                 low_quality_size += size
@@ -123,14 +128,15 @@ def find_junk(
                 )
 
         # 3. Burst leftovers (non-picked burst photos)
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
                 a.ZDATECREATED,
                 a.ZAVALANCHEKIND,
                 a.ZAVALANCHEPICKTYPE,
-                aa.ZORIGINALFILESIZE
+                aa.ZORIGINALFILESIZE,
+                {tz_offset_sql(tz_available)} AS tz_offset
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
             WHERE a.ZTRASHEDSTATE != 1
@@ -143,7 +149,7 @@ def find_junk(
         for row in cursor:
             asset_id = row["Z_PK"]
             filename = row["ZFILENAME"]
-            created = coredata_to_datetime(row["ZDATECREATED"])
+            created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
             size = row["ZORIGINALFILESIZE"] or 0
 
             burst_size += size
@@ -163,13 +169,14 @@ def find_junk(
         duplicate_size = 0
         if include_duplicates:
             # Method 1: Use Apple's duplicate detection
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     a.Z_PK,
                     a.ZFILENAME,
                     a.ZDATECREATED,
                     a.ZDUPLICATEASSETVISIBILITYSTATE,
-                    aa.ZORIGINALFILESIZE
+                    aa.ZORIGINALFILESIZE,
+                    {tz_offset_sql(tz_available)} AS tz_offset
                 FROM ZASSET a
                 LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
                 WHERE a.ZTRASHEDSTATE != 1
@@ -180,7 +187,7 @@ def find_junk(
             for row in cursor:
                 asset_id = row["Z_PK"]
                 filename = row["ZFILENAME"]
-                created = coredata_to_datetime(row["ZDATECREATED"])
+                created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
                 size = row["ZORIGINALFILESIZE"] or 0
 
                 duplicate_size += size

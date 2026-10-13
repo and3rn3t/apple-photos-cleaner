@@ -15,18 +15,22 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
     build_identifier_lists,
-    coredata_to_datetime,
+    coredata_to_local,
     detect_face_schema,
     escape_applescript,
     format_size,
+    has_timezone_offset,
+    local_datetime_sql,
     require_uuid_support,
     sanitize_folder_name,
+    tz_offset_sql,
 )
 
 # Counters reported back by the generated AppleScript.
@@ -34,13 +38,13 @@ _RESULT_RE = re.compile(r"EXPORTED:(\d+)\s+SKIPPED:(\d+)")
 
 
 def generate_export_plan(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     organize_by: str = "year_month",
     favorites_only: bool = False,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    person_name: Optional[str] = None,
-    album_name: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    person_name: str | None = None,
+    album_name: str | None = None,
 ) -> dict[str, Any]:
     """
     Generate an export plan showing what will be exported.
@@ -61,6 +65,8 @@ def generate_export_plan(
         cursor = conn.cursor()
         require_uuid_support(cursor, "Export")
         schema = detect_face_schema(cursor)
+        tz_available = has_timezone_offset(cursor)
+        local_dt = local_datetime_sql(tz_available)
 
         # Build WHERE clauses
         where_clauses = ["a.ZTRASHEDSTATE != 1"]
@@ -69,29 +75,17 @@ def generate_export_plan(
         if favorites_only:
             where_clauses.append("a.ZFAVORITE = 1")
 
+        # Date filters compare local capture time as text ("YYYY-MM-DD HH:MM:SS"); both ends inclusive
         if start_date:
-            # Convert to Core Data timestamp
-            from datetime import datetime
-
-            from _common import datetime_to_coredata
-
-            dt = datetime.fromisoformat(start_date)
-            timestamp = datetime_to_coredata(dt)
-            where_clauses.append("a.ZDATECREATED >= ?")
-            params.append(timestamp)
+            where_clauses.append(f"{local_dt} >= ?")
+            params.append(f"{date.fromisoformat(start_date).isoformat()} 00:00:00")
 
         if end_date:
-            from datetime import datetime
-
-            from _common import datetime_to_coredata
-
-            dt = datetime.fromisoformat(end_date)
-            timestamp = datetime_to_coredata(dt)
-            where_clauses.append("a.ZDATECREATED <= ?")
-            params.append(timestamp)
+            where_clauses.append(f"{local_dt} <= ?")
+            params.append(f"{date.fromisoformat(end_date).isoformat()} 23:59:59")
 
         # Base query
-        query = """
+        query = f"""
             SELECT
                 a.Z_PK,
                 a.ZUUID,
@@ -99,7 +93,8 @@ def generate_export_plan(
                 a.ZDATECREATED,
                 a.ZLATITUDE,
                 a.ZLONGITUDE,
-                aa.ZORIGINALFILESIZE
+                aa.ZORIGINALFILESIZE,
+                {tz_offset_sql(tz_available)} AS tz_offset
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
         """
@@ -135,7 +130,7 @@ def generate_export_plan(
         for row in cursor.fetchall():
             asset_id = row["Z_PK"]
             filename = row["ZFILENAME"]
-            created = coredata_to_datetime(row["ZDATECREATED"])
+            created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
             size = row["ZORIGINALFILESIZE"] or 0
 
             total_size += size
@@ -240,9 +235,10 @@ def export_with_applescript(items: list[dict[str, Any]], output_dir: str, folder
         export_path = output_dir
 
     # Verify resolved path is inside output_dir
+    # (commonpath, not startswith: "/out-evil" starts with "/out" but isn't inside it)
     real_export = os.path.realpath(export_path)
     real_output = os.path.realpath(output_dir)
-    if not real_export.startswith(real_output):
+    if os.path.commonpath([real_export, real_output]) != real_output:
         raise ValueError(f"Path traversal detected in folder name: {folder_name!r}")
 
     id_list, name_list = build_identifier_lists(items)
@@ -317,7 +313,7 @@ Examples:
   %(prog)s --output-dir ~/Pictures/Export --favorites --start-date 2025-01-01
 
   # Export photos with a specific person
-  %(prog)s --output-dir ~/Pictures/Export --person "Jonah" --organize-by person
+  %(prog)s --output-dir ~/Pictures/Export --person "Alex" --organize-by person
 
   # Export specific album
   %(prog)s --output-dir ~/Pictures/Export --album "Vacation 2025" --organize-by album
@@ -337,8 +333,8 @@ interactively it asks for confirmation first — pass --yes to skip that.
         help="How to organize exports",
     )
     parser.add_argument("--favorites", action="store_true", help="Export only favorites")
-    parser.add_argument("--start-date", help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end-date", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--start-date", help="Start date (YYYY-MM-DD, local capture time)")
+    parser.add_argument("--end-date", help="End date (YYYY-MM-DD, local capture time, inclusive)")
     parser.add_argument("--person", help="Export only photos with this person")
     parser.add_argument("--album", help="Export only from this album")
     parser.add_argument("--plan-only", action="store_true", help="Show export plan without actually exporting")

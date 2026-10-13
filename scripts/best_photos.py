@@ -5,25 +5,27 @@ Surface overlooked great shots using Apple's computed quality scores.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
     build_asset_query,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
     get_quality_score,
+    has_timezone_offset,
+    local_datetime_sql,
     run_script,
     validate_year,
 )
 
 
 def find_best_photos(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     min_quality: float = 0.7,
     top_n: int = 50,
     hidden_gems_only: bool = False,
-    year: Optional[str] = None,
+    year: str | None = None,
 ) -> dict[str, Any]:
     """
     Find best quality photos, optionally filtering to hidden gems (not favorited).
@@ -40,6 +42,7 @@ def find_best_photos(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         where_clauses = [
             "a.ZTRASHEDSTATE != 1",
@@ -53,13 +56,14 @@ def find_best_photos(
         params: list = []
         if year:
             year = validate_year(year)
-            where_clauses.append("strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?")
+            where_clauses.append(f"strftime('%Y', {local_datetime_sql(tz_available)}) = ?")
             params.append(year)
 
         query = build_asset_query(
             where_clauses=where_clauses,
             join_additional=True,
             join_computed=True,
+            tz_offset_available=tz_available,
         )
         cursor.execute(query, params)
 
@@ -97,7 +101,7 @@ def find_best_photos(
                 quality_histogram["poor"] += 1
 
             if quality >= min_quality:
-                created = coredata_to_datetime(row["ZDATECREATED"])
+                created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
                 size = row["ZORIGINALFILESIZE"] or 0
 
                 # Compute detailed score breakdown
@@ -208,7 +212,7 @@ def main():
         )
         parser.add_argument("--top", type=int, default=50, help="Number of top photos to return (default: 50)")
         parser.add_argument("--hidden-gems", action="store_true", help="Only show photos that are NOT favorited")
-        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+        parser.add_argument("--year", help="Filter to specific year (YYYY, local capture time)")
 
     def invoke(db_path, args):
         return find_best_photos(

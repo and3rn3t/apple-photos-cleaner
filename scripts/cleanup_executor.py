@@ -14,16 +14,18 @@ import argparse
 import re
 import subprocess
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     LOCAL_IDENTIFIER_SUFFIX,
     PhotosDB,
     build_identifier_lists,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
+    has_timezone_offset,
     output_json,
     require_uuid_support,
+    tz_offset_sql,
 )
 
 # Maximum items per AppleScript batch (Photos.app can be slow with large batches)
@@ -37,7 +39,7 @@ __all__ = ["LOCAL_IDENTIFIER_SUFFIX", "generate_trash_applescript", "require_uui
 
 
 def get_cleanup_candidates(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     category: str = "old_screenshots",
     screenshot_age_days: int = 30,
     quality_threshold: float = 0.3,
@@ -59,6 +61,7 @@ def get_cleanup_candidates(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
         require_uuid_support(cursor, "Cleanup")
 
         candidates = []
@@ -82,7 +85,8 @@ def get_cleanup_candidates(
                 f"""
                 SELECT
                     a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
-                    aa.ZORIGINALFILESIZE
+                    aa.ZORIGINALFILESIZE,
+                    {tz_offset_sql(tz_available)} AS tz_offset
                 FROM ZASSET a
                 LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
                 WHERE {where}
@@ -93,7 +97,7 @@ def get_cleanup_candidates(
             )
 
             for row in cursor.fetchall():
-                created = coredata_to_datetime(row["ZDATECREATED"])
+                created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
                 candidates.append(
                     {
                         "id": row["Z_PK"],
@@ -108,10 +112,11 @@ def get_cleanup_candidates(
 
         elif category == "burst_leftovers":
             cursor.execute(
-                """
+                f"""
                 SELECT
                     a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
-                    aa.ZORIGINALFILESIZE
+                    aa.ZORIGINALFILESIZE,
+                    {tz_offset_sql(tz_available)} AS tz_offset
                 FROM ZASSET a
                 LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
                 WHERE a.ZTRASHEDSTATE != 1
@@ -124,7 +129,7 @@ def get_cleanup_candidates(
             )
 
             for row in cursor.fetchall():
-                created = coredata_to_datetime(row["ZDATECREATED"])
+                created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
                 candidates.append(
                     {
                         "id": row["Z_PK"],
@@ -147,6 +152,7 @@ def get_cleanup_candidates(
                     "a.ZISDETECTEDSCREENSHOT != 1",
                 ],
                 join_additional=True,
+                tz_offset_available=tz_available,
                 join_computed=True,
                 order_by="ca.ZFAILURESCORE DESC",
                 limit=limit * 3,  # fetch more since we filter by quality
@@ -156,7 +162,7 @@ def get_cleanup_candidates(
             for row in cursor.fetchall():
                 quality = get_quality_score(row)
                 if quality is not None and quality < quality_threshold:
-                    created = coredata_to_datetime(row["ZDATECREATED"])
+                    created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
                     candidates.append(
                         {
                             "id": row["Z_PK"],
@@ -174,11 +180,12 @@ def get_cleanup_candidates(
 
         elif category == "duplicates":
             cursor.execute(
-                """
+                f"""
                 SELECT
                     a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
                     a.ZFAVORITE,
                     aa.ZORIGINALFILESIZE,
+                    {tz_offset_sql(tz_available)} AS tz_offset,
                     a.ZDUPLICATEASSETVISIBILITYSTATE
                 FROM ZASSET a
                 LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
@@ -192,7 +199,7 @@ def get_cleanup_candidates(
             )
 
             for row in cursor.fetchall():
-                created = coredata_to_datetime(row["ZDATECREATED"])
+                created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
                 candidates.append(
                     {
                         "id": row["Z_PK"],

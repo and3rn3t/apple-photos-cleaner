@@ -7,14 +7,17 @@ quality scores, favorites, and scene context to build highlight reels.
 """
 
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
     get_quality_score,
+    has_timezone_offset,
+    local_datetime_sql,
     run_script,
+    tz_offset_sql,
     validate_year,
 )
 
@@ -52,8 +55,8 @@ for season, months in SEASONS_SH.items():
 
 
 def get_seasonal_highlights(
-    db_path: Optional[str] = None,
-    year: Optional[str] = None,
+    db_path: str | None = None,
+    year: str | None = None,
     top_n: int = 20,
     southern_hemisphere: bool = False,
 ) -> dict[str, Any]:
@@ -73,12 +76,13 @@ def get_seasonal_highlights(
 
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         where = ["a.ZTRASHEDSTATE != 1", "a.ZKIND = 0"]  # Photos only
         params: list = []
         if year and year != "all":
             year = validate_year(year)
-            where.append("strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?")
+            where.append(f"strftime('%Y', {local_datetime_sql(tz_available)}) = ?")
             params.append(year)
 
         query = f"""
@@ -86,6 +90,7 @@ def get_seasonal_highlights(
                 a.Z_PK, a.ZFILENAME, a.ZDATECREATED, a.ZFAVORITE,
                 a.ZWIDTH, a.ZHEIGHT, a.ZLATITUDE, a.ZLONGITUDE,
                 aa.ZORIGINALFILESIZE, aa.ZTITLE,
+                {tz_offset_sql(tz_available)} AS tz_offset,
                 ca.ZPLEASANTCOMPOSITIONSCORE,
                 ca.ZPLEASANTLIGHTINGSCORE,
                 ca.ZPLEASANTPATTERNSCORE,
@@ -119,7 +124,7 @@ def get_seasonal_highlights(
 
         for row in cursor.fetchall():
             rd = dict(row)
-            created = coredata_to_datetime(rd["ZDATECREATED"])
+            created = coredata_to_local(rd["ZDATECREATED"], rd["tz_offset"])
             if not created:
                 continue
 
@@ -239,7 +244,7 @@ def format_summary(data: dict[str, Any]) -> str:
 
 def main():
     def add_args(parser):
-        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+        parser.add_argument("--year", help="Filter to specific year (YYYY, local capture time)")
         parser.add_argument("--top", type=int, default=20, help="Top N photos per season (default: 20)")
         parser.add_argument(
             "--southern",

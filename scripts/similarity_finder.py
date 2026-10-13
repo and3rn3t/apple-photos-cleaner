@@ -9,21 +9,24 @@ to surface groups of near-identical or thematically similar images.
 
 import math
 import sys
-from typing import Any, Optional
+from typing import Any
 
 from _common import (
     PhotosDB,
     _safe_float,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
+    has_timezone_offset,
+    local_datetime_sql,
     run_script,
+    tz_offset_sql,
     validate_year,
 )
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     mag_a = math.sqrt(sum(x * x for x in a))
     mag_b = math.sqrt(sum(x * x for x in b))
     if mag_a == 0 or mag_b == 0:
@@ -61,9 +64,9 @@ def _extract_features(row: dict) -> list[float]:
 
 
 def find_similar_photos(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     threshold: float = 0.95,
-    year: Optional[str] = None,
+    year: str | None = None,
     limit: int = 500,
 ) -> dict[str, Any]:
     """
@@ -80,6 +83,7 @@ def find_similar_photos(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         # Check available columns
         cursor.execute("PRAGMA table_info(ZCOMPUTEDASSETATTRIBUTES)")
@@ -97,7 +101,7 @@ def find_similar_photos(
         params: list = []
         if year:
             year = validate_year(year)
-            where.append("strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?")
+            where.append(f"strftime('%Y', {local_datetime_sql(tz_available)}) = ?")
             params.append(year)
 
         # Get photos with computed attributes
@@ -106,6 +110,7 @@ def find_similar_photos(
                 a.Z_PK, a.ZFILENAME, a.ZDATECREATED, a.ZFAVORITE,
                 a.ZLATITUDE, a.ZLONGITUDE, a.ZWIDTH, a.ZHEIGHT,
                 aa.ZORIGINALFILESIZE,
+                {tz_offset_sql(tz_available)} AS tz_offset,
                 ca.*
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
@@ -125,7 +130,7 @@ def find_similar_photos(
             if all(f == 0.0 for f in features):
                 continue
 
-            created = coredata_to_datetime(rd["ZDATECREATED"])
+            created = coredata_to_local(rd["ZDATECREATED"], rd["tz_offset"])
             photos.append(
                 {
                     "id": rd["Z_PK"],
@@ -250,7 +255,7 @@ def main():
             default=0.95,
             help="Similarity threshold 0-1 (default: 0.95 = very similar)",
         )
-        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+        parser.add_argument("--year", help="Filter to specific year (YYYY, local capture time)")
         parser.add_argument(
             "--limit",
             type=int,
