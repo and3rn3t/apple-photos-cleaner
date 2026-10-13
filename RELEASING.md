@@ -25,7 +25,9 @@ Raising the Python floor is called out in the CHANGELOG even when it's a patch.
    - `version` in `pyproject.toml`
 3. **CHANGELOG.md.** Move entries under `## [X.Y.Z] - YYYY-MM-DD` (the merge date),
    grouped as Added / Changed / Fixed / Security / Removed. Mention roadmap IDs. Add
-   the compare link at the bottom.
+   the compare link at the bottom. CI enforces both: `tests/test_skill_manifest.py`
+   fails while the SKILL.md version has no dated entry, so the PR stays red until
+   it's done. If the merge slips a day, update the date.
 4. **ROADMAP.md.** Mark the shipped items done and update the status line.
 5. **Run the checks CI runs:**
 
