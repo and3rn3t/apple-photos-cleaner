@@ -793,6 +793,20 @@ class TestCleanupExecutorExtended:
         assert result["summary"]["category"] == "low_quality"
         assert result["summary"]["count"] >= 1
 
+    def test_limit_caps_candidates(self, rich_db):
+        """--limit bounds how many items the destructive path can ever touch."""
+        from cleanup_executor import get_cleanup_candidates
+
+        with patch("cleanup_executor.PhotosDB") as mock_cls:
+            mock_cls.return_value.__enter__ = lambda s: rich_db
+            mock_cls.return_value.__exit__ = lambda s, *a: None
+            unlimited = get_cleanup_candidates(category="low_quality", quality_threshold=0.9)
+            capped = get_cleanup_candidates(category="low_quality", quality_threshold=0.9, limit=1)
+
+        assert unlimited["summary"]["count"] > 1, "fixture must exceed the cap for this to prove anything"
+        assert capped["summary"]["count"] == 1
+        assert len(capped["candidates"]) == 1
+
     def test_all_screenshots_candidates(self, rich_db):
         from cleanup_executor import get_cleanup_candidates
 

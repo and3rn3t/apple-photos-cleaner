@@ -934,6 +934,45 @@ class TestCleanupExecutor:
         assert result["success_count"] == 0
         assert result["errors"]
 
+    def test_execute_cleanup_timeout_is_not_a_success(self):
+        """A timed-out batch must not be counted as deleted."""
+        import subprocess
+
+        from cleanup_executor import execute_cleanup
+
+        candidates = [{"id": i, "uuid": f"UUID-{i}", "filename": f"t{i}.jpg", "size": 1000} for i in range(3)]
+
+        with patch("cleanup_executor.subprocess.run", side_effect=subprocess.TimeoutExpired("osascript", 60)):
+            result = execute_cleanup(candidates, dry_run=False)
+
+        assert result["success_count"] == 0
+        assert any("timed out" in e for e in result["errors"])
+
+    def test_execute_cleanup_unexpected_exception_is_not_a_success(self):
+        """An unexpected failure is recorded, not silently treated as deletion."""
+        from cleanup_executor import execute_cleanup
+
+        candidates = [{"id": 1, "uuid": "UUID-1", "filename": "t.jpg", "size": 1000}]
+
+        with patch("cleanup_executor.subprocess.run", side_effect=OSError("osascript missing")):
+            result = execute_cleanup(candidates, dry_run=False)
+
+        assert result["success_count"] == 0
+        assert any("osascript missing" in e for e in result["errors"])
+
+    def test_execute_cleanup_nonzero_returncode_is_not_a_success(self):
+        """A failing osascript exit status must not count as deletion."""
+        from cleanup_executor import execute_cleanup
+
+        candidates = [{"id": 1, "uuid": "UUID-1", "filename": "t.jpg", "size": 1000}]
+
+        completed = MagicMock(returncode=1, stdout="", stderr="Not authorised")
+        with patch("cleanup_executor.subprocess.run", return_value=completed):
+            result = execute_cleanup(candidates, dry_run=False)
+
+        assert result["success_count"] == 0
+        assert any("Not authorised" in e for e in result["errors"])
+
     def test_dry_run(self):
         """Test dry run mode."""
         from cleanup_executor import execute_cleanup
