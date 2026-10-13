@@ -235,9 +235,10 @@ def export_with_applescript(items: list[dict[str, Any]], output_dir: str, folder
         export_path = output_dir
 
     # Verify resolved path is inside output_dir
+    # (commonpath, not startswith: "/out-evil" starts with "/out" but isn't inside it)
     real_export = os.path.realpath(export_path)
     real_output = os.path.realpath(output_dir)
-    if not real_export.startswith(real_output):
+    if os.path.commonpath([real_export, real_output]) != real_output:
         raise ValueError(f"Path traversal detected in folder name: {folder_name!r}")
 
     id_list, name_list = build_identifier_lists(items)

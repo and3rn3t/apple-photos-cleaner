@@ -451,7 +451,7 @@ def build_asset_query(
         query += f"\nORDER BY {order_by}"
 
     if limit:
-        query += f"\nLIMIT {limit}"
+        query += f"\nLIMIT {int(limit)}"
 
     return query
 
@@ -473,7 +473,7 @@ def validate_year(year: str | None) -> str | None:
     """
     if year is None:
         return None
-    if not re.match(r"^\d{4}$", year):
+    if not re.fullmatch(r"\d{4}", year):
         raise ValueError(f"Year must be a 4-digit number, got: {year!r}")
     return year
 
