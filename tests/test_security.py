@@ -8,7 +8,10 @@ every CLI argument an agent passes in. These tests pin down the three places
 that input meets an interpreter: AppleScript, the filesystem, and SQL.
 """
 
+import io
+import json
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -28,6 +31,7 @@ from _common import (
     connect_db,
     escape_applescript,
     exit_code_for,
+    plan_token,
     sanitize_folder_name,
     validate_year,
 )
@@ -360,3 +364,134 @@ class TestExitCodes:
     )
     def test_exception_mapping(self, error, code):
         assert exit_code_for(error) == code
+
+
+# ── Confirmation tokens for mutations (T1.19) ────────────────────────────────
+
+
+class TestPlanToken:
+    def test_order_of_uuids_does_not_matter(self):
+        assert plan_token("c", {"a": 1}, ["u1", "u2"]) == plan_token("c", {"a": 1}, ["u2", "u1"])
+
+    @pytest.mark.parametrize(
+        "changed",
+        [
+            ("c", {"a": 1}, ["u1", "u2", "u3"]),  # one more asset
+            ("c", {"a": 1}, ["u1"]),  # one fewer asset
+            ("c", {"a": 2}, ["u1", "u2"]),  # different parameters
+            ("other", {"a": 1}, ["u1", "u2"]),  # different command
+        ],
+    )
+    def test_any_change_produces_a_new_token(self, changed):
+        assert plan_token(*changed) != plan_token("c", {"a": 1}, ["u1", "u2"])
+
+
+def run_main(module, argv: list[str], capsys) -> tuple[int, str]:
+    with patch.object(sys, "argv", [module.__name__, *argv]):
+        code = module.main()
+    return code, capsys.readouterr().out
+
+
+class TestCleanupConfirmation:
+    @pytest.fixture
+    def cli(self, db_file):
+        import cleanup_executor
+
+        return cleanup_executor, ["--db-path", str(db_file), "--category", "all_screenshots"]
+
+    def preview_token(self, cli, capsys) -> str:
+        module, argv = cli
+        code, out = run_main(module, argv, capsys)
+        assert code == ExitCode.OK
+        return json.loads(out)["confirm_token"]
+
+    @pytest.mark.parametrize("confirm", [None, "0000000000000000"])
+    def test_execute_without_matching_token_does_nothing(self, cli, capsys, confirm):
+        module, argv = cli
+        extra = ["--execute"] + (["--confirm", confirm] if confirm else [])
+        with patch("cleanup_executor.subprocess.run") as osascript:
+            code, out = run_main(module, argv + extra, capsys)
+        assert code == ExitCode.CONFIRMATION_REQUIRED
+        osascript.assert_not_called()
+        assert json.loads(out)["confirm_token"], "the refusal must re-show the preview and its token"
+
+    def test_execute_with_preview_token_runs(self, cli, capsys):
+        module, argv = cli
+        token = self.preview_token(cli, capsys)
+        with patch("cleanup_executor.subprocess.run") as osascript:
+            osascript.return_value = MagicMock(returncode=0, stdout="DELETED:1 SKIPPED:0", stderr="")
+            code, out = run_main(module, [*argv, "--execute", "--confirm", token], capsys)
+        assert code == ExitCode.OK
+        osascript.assert_called_once()
+        assert json.loads(out)["success_count"] == 1
+
+    def test_token_is_stale_once_parameters_change(self, cli, capsys):
+        module, argv = cli
+        token = self.preview_token(cli, capsys)
+        with patch("cleanup_executor.subprocess.run") as osascript:
+            code, _ = run_main(module, [*argv, "--limit", "1", "--execute", "--confirm", token], capsys)
+        assert code == ExitCode.CONFIRMATION_REQUIRED
+        osascript.assert_not_called()
+
+    def test_piped_yes_is_not_a_confirmation(self, cli, capsys, monkeypatch):
+        module, argv = cli
+        monkeypatch.setattr("sys.stdin", io.StringIO("yes\n"))
+        with patch("cleanup_executor.subprocess.run") as osascript:
+            code, _ = run_main(module, [*argv, "--execute"], capsys)
+        assert code == ExitCode.CONFIRMATION_REQUIRED
+        osascript.assert_not_called()
+
+    def test_next_command_round_trips(self, cli, capsys):
+        module, argv = cli
+        code, out = run_main(module, argv, capsys)
+        next_argv = shlex.split(json.loads(out)["next_command"])[1:]
+        with patch("cleanup_executor.subprocess.run") as osascript:
+            osascript.return_value = MagicMock(returncode=0, stdout="DELETED:1 SKIPPED:0", stderr="")
+            code, _ = run_main(module, next_argv, capsys)
+        assert code == ExitCode.OK
+        osascript.assert_called_once()
+
+
+class TestExportConfirmation:
+    @pytest.fixture
+    def cli(self, db_file, tmp_path):
+        import smart_export
+
+        argv = ["--db-path", str(db_file), "--output-dir", str(tmp_path / "out"), "--favorites", "--format", "json"]
+        return smart_export, argv
+
+    def test_export_without_token_writes_nothing(self, cli, capsys, tmp_path):
+        module, argv = cli
+        with patch("smart_export.subprocess.run") as osascript:
+            code, out = run_main(module, argv, capsys)
+        assert code == ExitCode.CONFIRMATION_REQUIRED
+        osascript.assert_not_called()
+        assert not (tmp_path / "out").exists()
+        assert json.loads(out)["confirm_token"]
+
+    def test_export_with_plan_token_runs(self, cli, capsys):
+        module, argv = cli
+        _, out = run_main(module, [*argv, "--plan-only"], capsys)
+        token = json.loads(out)["confirm_token"]
+        with patch("smart_export.subprocess.run") as osascript:
+            osascript.return_value = MagicMock(returncode=0, stdout="EXPORTED:1 SKIPPED:0", stderr="")
+            code, out = run_main(module, [*argv, "--confirm", token], capsys)
+        assert code == ExitCode.OK
+        osascript.assert_called_once()
+        assert json.loads(out)["exported"] == 1
+
+    def test_token_is_bound_to_output_dir(self, cli, capsys, tmp_path):
+        module, argv = cli
+        _, out = run_main(module, [*argv, "--plan-only"], capsys)
+        token = json.loads(out)["confirm_token"]
+        elsewhere = [*argv[:3], str(tmp_path / "elsewhere"), *argv[4:]]
+        with patch("smart_export.subprocess.run") as osascript:
+            code, _ = run_main(module, [*elsewhere, "--confirm", token], capsys)
+        assert code == ExitCode.CONFIRMATION_REQUIRED
+        osascript.assert_not_called()
+
+    def test_removed_yes_flag_is_rejected(self, cli, capsys):
+        module, argv = cli
+        with pytest.raises(SystemExit) as exc:
+            run_main(module, [*argv, "--yes"], capsys)
+        assert exc.value.code == ExitCode.USAGE

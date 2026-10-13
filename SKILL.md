@@ -34,7 +34,7 @@ Apple Photos is great at organizing and syncing photos, but it's not so great at
 - **Seasonal Highlights** — Curate the best photos per season using quality scores and favorites
 - **Face Quality Scoring** — Rank face photos per person: find best/worst portraits
 
-**Safety:** Every analysis command is read-only — reports are built from read-only SQLite queries and nothing is ever written back to the Photos database. Two commands are **mutating** and drive Photos.app through AppleScript automation: `smart_export.py` writes exported copies to a directory you choose, and `cleanup_executor.py` moves items to Recently Deleted. Cleanup previews by default and requires both the `--execute` flag and a typed `yes` confirmation. See [Safety & Permissions](#safety--permissions).
+**Safety:** Every analysis command is read-only — reports are built from read-only SQLite queries and nothing is ever written back to the Photos database. Two commands are **mutating** and drive Photos.app through AppleScript automation: `smart_export.py` writes exported copies to a directory you choose, and `cleanup_executor.py` moves items to Recently Deleted. Both preview by default. Executing requires `--confirm <token>` with the token printed by the preview, so only the exact set the user was shown can run. See [Safety & Permissions](#safety--permissions).
 
 **Privacy:** Read-only does not mean low-sensitivity. Reports can include recognized people's names, face detections, GPS coordinates, and Shared Library contributor identifiers. Everything is processed locally — no network calls, no telemetry — but the JSON you write with `--output` carries that data. See [Privacy](#privacy).
 
@@ -363,10 +363,10 @@ Events: 12
 
 ### 6. Smart Export
 
-Plan organized exports by year/month, person, album, or location. Shows what will be exported without actually doing it (unless confirmed).
+Plan organized exports by year/month, person, album, or location. It shows what will be exported and only exports when given the plan's confirmation token.
 
 ```bash
-python3 scripts/smart_export.py --output-dir PATH [--organize-by MODE] [--plan-only]
+python3 scripts/smart_export.py --output-dir PATH [--organize-by MODE] [--plan-only | --confirm TOKEN] [--format json]
 ```
 
 **Options:**
@@ -378,7 +378,8 @@ python3 scripts/smart_export.py --output-dir PATH [--organize-by MODE] [--plan-o
 - `--person NAME` — Export only photos with this person
 - `--album NAME` — Export only from this album
 - `--plan-only` — Show plan without exporting (recommended first step)
-- `--yes` — Skip the interactive confirmation prompt
+- `--confirm TOKEN` — Run the export; must match the token the plan printed
+- `--format human|json` — Plan/result format (default: human). JSON includes `confirm_token` and `next_command`
 
 **Example Output:**
 ```
@@ -397,9 +398,13 @@ Folders:
   2025/03-March/
     89 items, 398 MB
   ...
+
+Confirmation token: 3f9a1c0d2b7e4a65
+To export exactly this plan, run:
+    smart_export.py --output-dir ~/Export --organize-by year_month --confirm 3f9a1c0d2b7e4a65
 ```
 
-**Mutating:** without `--plan-only` this command exports. It prints the plan, asks for confirmation on a TTY (`--yes` skips the prompt), then drives Photos.app via AppleScript to write copies into `--output-dir`. It creates new files only — the library is never altered. Each asset is resolved by its `ZUUID`, and the resolved item's filename is re-checked before export, so the run cannot reach photos outside the plan. The final line reports `exported` and `skipped` counts; items are skipped when their id no longer resolves in Photos or the filename no longer matches.
+**Mutating:** with a matching `--confirm` token this command exports. Without one it prints the plan and its token and exits with code 11. A token is bound to the exact assets, filters and `--output-dir`; if any of them changed, nothing is written and a fresh token is printed. The export drives Photos.app via AppleScript to write copies into `--output-dir`. It creates new files only — the library is never altered. Each asset is resolved by its `ZUUID`, and the resolved item's filename is re-checked before export, so the run cannot reach photos outside the plan. The final line reports `exported` and `skipped` counts; items are skipped when their id no longer resolves in Photos or the filename no longer matches.
 
 **Usage in Conversation:**
 
@@ -787,7 +792,7 @@ Orphan photos (no album): 4,219
 Actually move junk photos to trash via AppleScript. Supports old screenshots, burst leftovers, low quality, and duplicates. All items go to Recently Deleted (recoverable for 30 days).
 
 ```bash
-python3 scripts/cleanup_executor.py --category CATEGORY [--execute] [--human]
+python3 scripts/cleanup_executor.py --category CATEGORY [--execute --confirm TOKEN] [--human]
 ```
 
 **Options:**
@@ -796,12 +801,14 @@ python3 scripts/cleanup_executor.py --category CATEGORY [--execute] [--human]
 - `--quality-threshold N` — Quality threshold for low_quality (default: 0.3)
 - `--limit N` — Maximum items to process (default: 500)
 - `--execute` — Actually perform the cleanup (without this, preview only)
+- `--confirm TOKEN` — The `confirm_token` from the preview; required with `--execute`
 - `--batch-size N` — Items per AppleScript batch (default: 50)
 - `--human` — Human-readable summary
 
 **Safety:**
-- Without `--execute`, shows preview only (dry run)
-- With `--execute`, requires typing 'yes' to confirm
+- Without `--execute`, shows preview only (dry run). The preview JSON includes `confirm_token` and `next_command` (the exact command that executes it)
+- `--execute` needs `--confirm <token>` from that preview. If the token is missing, or the candidates or options changed since the preview, nothing runs: the fresh preview and token are printed and the exit code is 11
+- No interactive prompt; piping `yes` does nothing
 - Items are moved to Recently Deleted (not permanently deleted)
 - 30-day recovery window in Photos.app
 - Uses AppleScript through Photos.app (never touches database directly)
@@ -811,22 +818,20 @@ python3 scripts/cleanup_executor.py --category CATEGORY [--execute] [--human]
 # Preview what would be cleaned
 python3 scripts/cleanup_executor.py --category old_screenshots --human
 
-# Actually clean up (with confirmation prompt)
-python3 scripts/cleanup_executor.py --category old_screenshots --execute
-
-# Clean burst leftovers
-python3 scripts/cleanup_executor.py --category burst_leftovers --execute
+# After the user approves that preview, run its next_command
+python3 scripts/cleanup_executor.py --category old_screenshots --screenshot-age 30 \
+  --quality-threshold 0.3 --limit 500 --execute --confirm 3f9a1c0d2b7e4a65
 ```
 
 **Usage in Conversation:**
 
 **User:** "Delete my old screenshots"  
-**AI:** *Runs cleanup_executor.py --category old_screenshots --human first to show preview, then prompts user before running with --execute*
+**AI:** *Runs cleanup_executor.py --category old_screenshots to show the preview, asks the user, and only after a yes runs the preview's `next_command`*
 
 **User:** "Clean up burst photos"  
 **AI:** *Runs cleanup_executor.py --category burst_leftovers --human, shows count and size, asks for confirmation*
 
-**⚠️ AI Tip:** Always show the preview first! Never run with --execute without showing the user what will be affected and getting confirmation.
+**⚠️ AI Tip:** The token is the user's approval of one specific set of items. Only pass `--confirm` after the user has seen that preview and said yes. Never reuse a token across previews, and never execute just to get a token. On exit code 11, show the new preview again.
 
 ---
 
@@ -1041,11 +1046,7 @@ python3 scripts/junk_finder.py --human
 # Preview old screenshots
 python3 scripts/cleanup_executor.py --category old_screenshots --human
 
-# Execute cleanup (with confirmation)
-python3 scripts/cleanup_executor.py --category old_screenshots --execute
-
-# Clean burst leftovers
-python3 scripts/cleanup_executor.py --category burst_leftovers --execute
+# After the user approves: run the preview's next_command (ends in --execute --confirm <token>)
 
 # Check album health
 python3 scripts/album_auditor.py --human
@@ -1131,7 +1132,7 @@ python3 scripts/shared_library.py --output shared_report.json
 2. **Find junk** — Run `junk_finder.py` to quantify cleanup opportunities
 3. **Be specific** — Don't just say "you have junk photos," say "you have 287 screenshots older than 30 days (2.1 GB) that could be deleted"
 4. **Explain savings** — Always mention estimated storage savings
-5. **Deleting is a separate, opt-in step** — analysis only identifies candidates. To act on them, use `cleanup_executor.py` (preview first, then `--execute` plus a typed `yes`), or let the user clean up in Photos.app
+5. **Deleting is a separate, opt-in step** — analysis only identifies candidates. To act on them, use `cleanup_executor.py` (preview first, then the preview's `next_command`, which ends in --execute --confirm <token>), or let the user clean up in Photos.app
 
 ### When User Asks "What Did I Do?"
 
@@ -1170,7 +1171,7 @@ python3 scripts/shared_library.py --output shared_report.json
 1. **Always preview first** — Run cleanup_executor without --execute
 2. **Show counts and sizes** — "287 old screenshots, 2.1 GB"
 3. **Explain safety** — Items go to Recently Deleted, recoverable for 30 days
-4. **Get confirmation** — Never auto-execute cleanup
+4. **Get confirmation** — Only after the user says yes, run the preview's `next_command` (`--execute --confirm <token>`). Exit code 11 means the set changed: show the new preview and ask again
 
 ### Output Format Guidance
 
@@ -1197,7 +1198,7 @@ python3 scripts/shared_library.py --output shared_report.json
 
 **Mutating — two commands, both opt-in**
 
-- ⚠️ **`cleanup_executor.py`** — moves items to **Recently Deleted** through Photos.app AppleScript automation. Previews by default; needs the `--execute` flag *and* a typed `yes` confirmation. Bounded by `--limit` (default 500). Items stay recoverable in Recently Deleted.
+- ⚠️ **`cleanup_executor.py`** — moves items to **Recently Deleted** through Photos.app AppleScript automation. Previews by default; executing needs `--execute --confirm <token>`, with the token from the preview, so only the exact previewed set can be deleted. Bounded by `--limit` (default 500). Items stay recoverable in Recently Deleted.
 - ⚠️ **`smart_export.py`** — writes exported copies into `--output-dir` through Photos.app AppleScript automation. Preview with `--plan-only`. It only creates new files; it never alters the library.
 
 **Permissions**
@@ -1241,7 +1242,7 @@ files like the photos they describe.
 
 ## Limitations
 
-- **Analysis never deletes** — analysis commands only identify candidates; moving anything to Recently Deleted requires `cleanup_executor.py --execute` plus a typed confirmation
+- **Analysis never deletes** — analysis commands only identify candidates; moving anything to Recently Deleted requires `cleanup_executor.py --execute --confirm <token>`, with the token from a preview the user saw
 - **Export via AppleScript** — Requires Photos.app and Automation permission; exports copies, never moves or alters originals
 - **Reverse geocoding** — Offline lookup covers ~100 major world cities; remote locations show coordinates
 - **Similarity detection** — Uses computed quality vectors (not pixel-level); O(n²) comparison limited by `--limit`
@@ -1262,7 +1263,7 @@ Every command exits with one of these codes, so branch on the code rather than p
 | 4 | Permission denied | Grant Full Disk Access to the terminal or agent app |
 | 5 | Schema unsupported | This macOS version's library lacks a column the command needs; open an issue |
 | 10 | Cancelled by the user | |
-| 11 | Confirmation required | Reserved for mutating commands |
+| 11 | Confirmation required | A mutating command ran without a matching `--confirm` token. Nothing was changed. Show the user the fresh preview on stdout and ask again |
 
 ## Troubleshooting
 

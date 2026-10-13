@@ -64,11 +64,11 @@ Covered by `TestAppleScriptEscaping`, including a real `osascript` round trip on
 | Threat | Mitigation | Where |
 | --- | --- | --- |
 | A mutation runs without the user seeing what it does | Both commands preview by default; executing needs an explicit flag | `cleanup_executor --execute`, `smart_export` without `--plan-only` |
-| An agent approves for the user (piping `yes`, passing `--yes`) | *Planned:* the preview emits a token hashed from the exact candidate set, and executing requires `--confirm <token>`. A changed set invalidates the token (T1.19) | `cleanup_executor`, `smart_export` |
+| An agent approves for the user (piping `yes`, passing `--yes`) | The preview emits a token (`plan_token`) hashed from the exact asset UUIDs and selection options, and executing requires `--confirm <token>`. A changed set invalidates it (exit 11). There is no interactive prompt to satisfy (T1.19) | `cleanup_executor`, `smart_export`; `TestCleanupConfirmation`, `TestExportConfirmation` |
 | A runaway deletion | `--limit` (default 500) and batches of 50. Deleted items go to Recently Deleted, recoverable for 30 days | `cleanup_executor` |
 
-**Known gap until T1.19 ships:** `cleanup_executor` confirms with `input()`, which a piped
-`yes` satisfies, and `smart_export` skips its prompt when stdin is not a TTY.
+A token proves the agent ran the preview, not that the user read it. SKILL.md tells agents to
+pass `--confirm` only after the user says yes. The token makes sure that what runs is what was shown.
 
 ### 5. Filesystem writes (`smart_export`)
 

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Cleanup Executor: perform batch cleanup operations via AppleScript.
-Supports moving junk photos to trash with interactive confirmation.
+Supports moving junk photos to trash. Execution needs the confirmation token
+printed by the preview (see _common.plan_token), so what runs is exactly what
+the user was shown.
 All actions go through Photos.app for safety — nothing touches the database directly.
 
 Items are targeted by their stable asset UUID (ZASSET.ZUUID), never by filename.
@@ -12,6 +14,7 @@ photo. See generate_trash_applescript for the matching rules.
 
 import argparse
 import re
+import shlex
 import subprocess
 import sys
 from typing import Any
@@ -26,6 +29,7 @@ from _common import (
     handle_cli_error,
     has_timezone_offset,
     output_json,
+    plan_token,
     require_uuid_support,
     setup_logging,
     tz_offset_sql,
@@ -416,7 +420,10 @@ def format_summary(data: dict[str, Any]) -> str:
         if len(data["candidates"]) > 20:
             lines.append(f"  ... and {len(data['candidates']) - 20} more")
         lines.append("")
-        lines.append("⚠️  To execute, run with --execute flag")
+        if "confirm_token" in data:
+            lines.append(f"Confirmation token: {data['confirm_token']}")
+            lines.append("⚠️  To execute exactly these items, run:")
+            lines.append(f"    {data['next_command']}")
         lines.append("    Items will be moved to Recently Deleted (recoverable for 30 days)")
 
     elif "message" in data:
@@ -431,6 +438,38 @@ def format_summary(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def selection_params(args: argparse.Namespace) -> dict[str, Any]:
+    """The arguments that decide which assets are candidates (hashed into the token)."""
+    return {
+        "category": args.category,
+        "screenshot_age": args.screenshot_age,
+        "quality_threshold": args.quality_threshold,
+        "limit": args.limit,
+    }
+
+
+def execute_command(args: argparse.Namespace, token: str) -> str:
+    """The exact command line that executes this preview."""
+    argv = ["cleanup_executor.py"]
+    if args.db_path:
+        argv += ["--db-path", args.db_path]
+    elif args.library:
+        argv += ["--library", args.library]
+    for flag, value in selection_params(args).items():
+        argv += [f"--{flag.replace('_', '-')}", str(value)]
+    argv += ["--execute", "--confirm", token]
+    return shlex.join(argv)
+
+
+def emit_preview(data: dict[str, Any], args: argparse.Namespace) -> None:
+    if args.human:
+        print(format_summary(data))
+        return
+    output_json(data, args.output)
+    if not args.output:
+        print("\n" + format_summary(data), file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Execute cleanup operations via AppleScript",
@@ -443,11 +482,8 @@ Examples:
   # Preview burst leftovers
   %(prog)s --category burst_leftovers --human
 
-  # Actually move old screenshots to trash
-  %(prog)s --category old_screenshots --execute
-
-  # Clean up with custom settings
-  %(prog)s --category old_screenshots --screenshot-age 14 --execute
+  # Move exactly the previewed screenshots to trash, using the token the preview printed
+  %(prog)s --category old_screenshots --execute --confirm 3f9a1c0d2b7e4a65
 
 Categories:
   old_screenshots   - Screenshots older than --screenshot-age days
@@ -456,8 +492,10 @@ Categories:
   low_quality       - Photos below --quality-threshold
   duplicates        - Apple-detected duplicates (non-favorites only)
 
-⚠️  SAFETY: Items are moved to Recently Deleted, not permanently deleted.
-    You have 30 days to recover them in Photos.app.
+⚠️  SAFETY: --execute requires --confirm with the token from the preview. If the
+    candidates changed since the preview, nothing runs and a fresh token is
+    printed (exit code 11). Items are moved to Recently Deleted, not permanently
+    deleted; you have 30 days to recover them in Photos.app.
         """,
     )
     parser.add_argument("--db-path", help="Path to Photos.sqlite database")
@@ -477,6 +515,9 @@ Categories:
         "--execute", action="store_true", help="Actually perform the cleanup (moves to Recently Deleted)"
     )
     parser.add_argument(
+        "--confirm", metavar="TOKEN", help="Confirmation token from the preview (required with --execute)"
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=MAX_BATCH_SIZE,
@@ -487,6 +528,8 @@ Categories:
 
     args = parser.parse_args()
     setup_logging()
+    if args.confirm and not args.execute:
+        parser.error("--confirm only applies together with --execute")
 
     try:
         db_path = args.db_path or args.library
@@ -500,43 +543,40 @@ Categories:
             limit=args.limit,
         )
 
+        token = plan_token("cleanup_executor", selection_params(args), [c["uuid"] for c in data["candidates"]])
+        data["confirm_token"] = token
+        data["next_command"] = execute_command(args, token)
+
         if not data["candidates"]:
-            print(f"No cleanup candidates found for category: {args.category}")
-            return 0
-
-        if args.execute:
-            # Confirm before executing
-            count = len(data["candidates"])
-            total_size = format_size(sum(c["size"] for c in data["candidates"]))
-
-            print(f"⚠️  About to move {count} items ({total_size}) to Recently Deleted.")
-            print(f"    Category: {args.category}")
-            print("    You can recover them within 30 days in Photos.app.")
-            print()
-
-            confirm = input("Type 'yes' to proceed: ").strip().lower()
-            if confirm != "yes":
-                print("Cancelled.")
-                return ExitCode.USER_ABORTED
-
-            result = execute_cleanup(
-                candidates=data["candidates"],
-                dry_run=False,
-                batch_size=args.batch_size,
-            )
-
-            if args.human:
-                print(format_summary(result))
-            else:
-                output_json(result, args.output)
-        else:
-            # Preview mode
-            if args.human:
-                print(format_summary(data))
-            else:
+            print(f"No cleanup candidates found for category: {args.category}", file=sys.stderr)
+            if not args.human:
                 output_json(data, args.output)
-                if not args.output:
-                    print("\n" + format_summary(data), file=sys.stderr)
+            return ExitCode.OK
+
+        if args.execute and args.confirm != token:
+            emit_preview(data, args)
+            reason = "is stale: the candidates changed since the preview" if args.confirm else "is missing"
+            print(
+                f"\nNot executed: the confirmation token {reason}. Show the user the preview above, "
+                f"then re-run with --confirm {token}",
+                file=sys.stderr,
+            )
+            return ExitCode.CONFIRMATION_REQUIRED
+
+        if not args.execute:
+            emit_preview(data, args)
+            return ExitCode.OK
+
+        result = execute_cleanup(
+            candidates=data["candidates"],
+            dry_run=False,
+            batch_size=args.batch_size,
+        )
+        result["confirm_token"] = token
+        if args.human:
+            print(format_summary(result))
+        else:
+            output_json(result, args.output)
 
         return 0
 

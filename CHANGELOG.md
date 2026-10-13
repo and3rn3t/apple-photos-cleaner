@@ -8,7 +8,25 @@ release is cut.
 
 ## [Unreleased]
 
+### Breaking (safety)
+
+- **Mutations need a confirmation token** (T1.19). The old prompts could be
+  bypassed by an agent: `cleanup_executor` read a typed `yes` from stdin, so a
+  piped `yes` approved it, and `smart_export` skipped its prompt whenever stdin
+  wasn't a terminal. Now each preview prints a `confirm_token` (also in its
+  JSON, with a ready-to-run `next_command`). Executing requires
+  `--confirm <token>`. The token is bound to the exact assets and options shown,
+  so if anything changed, nothing runs and the exit code is 11.
+  - `cleanup_executor --execute` → `--execute --confirm <token>`
+  - `smart_export` without `--plan-only` no longer exports by itself; it needs
+    `--confirm <token>`. `--yes` is removed (exit 2).
+
+  These ship without a deprecation period under the safety exception in
+  CONTRIBUTING.md.
+
 ### Added
+
+- `smart_export --format json` prints the plan, or the export result, as JSON.
 
 - `docs/threat-model.md`, linked from SECURITY.md (T0.9). It lists trust boundaries, what we
   protect, and the mitigation and test behind each one.
