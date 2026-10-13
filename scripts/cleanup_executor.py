@@ -3,9 +3,16 @@
 Cleanup Executor: perform batch cleanup operations via AppleScript.
 Supports moving junk photos to trash with interactive confirmation.
 All actions go through Photos.app for safety — nothing touches the database directly.
+
+Items are targeted by their stable asset UUID (ZASSET.ZUUID), never by filename.
+Photos filenames are not unique — the same IMG_0042.HEIC can appear many times
+across devices and re-imports — so filename matching risks trashing the wrong
+photo. See generate_trash_applescript for the matching rules.
 """
 
 import argparse
+import re
+import sqlite3
 import subprocess
 import sys
 from typing import Any, Optional
@@ -14,6 +21,32 @@ from _common import PhotosDB, coredata_to_datetime, escape_applescript, format_s
 
 # Maximum items per AppleScript batch (Photos.app can be slow with large batches)
 MAX_BATCH_SIZE = 50
+
+# Photos exposes an asset's AppleScript `id` as "<UUID>/L0/001" for library assets.
+LOCAL_IDENTIFIER_SUFFIX = "/L0/001"
+
+# Counters reported back by the generated AppleScript.
+_RESULT_RE = re.compile(r"DELETED:(\d+)\s+SKIPPED:(\d+)")
+
+
+def require_uuid_support(cursor: sqlite3.Cursor) -> None:
+    """Verify the ZASSET table exposes ZUUID.
+
+    Targeting assets by UUID is what makes deletion safe. If the column is
+    missing we refuse to proceed rather than silently falling back to
+    filename matching, which can delete the wrong photo.
+
+    Raises:
+        RuntimeError: If ZASSET has no ZUUID column.
+    """
+    cursor.execute("PRAGMA table_info(ZASSET)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "ZUUID" not in columns:
+        raise RuntimeError(
+            "ZASSET.ZUUID not found in this Photos database. Cleanup cannot safely "
+            "identify assets without it and will not run. Please open an issue with "
+            "your macOS version."
+        )
 
 
 def get_cleanup_candidates(
@@ -39,6 +72,7 @@ def get_cleanup_candidates(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        require_uuid_support(cursor)
 
         candidates = []
 
@@ -60,7 +94,7 @@ def get_cleanup_candidates(
             cursor.execute(
                 f"""
                 SELECT
-                    a.Z_PK, a.ZFILENAME, a.ZDATECREATED,
+                    a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
                     aa.ZORIGINALFILESIZE
                 FROM ZASSET a
                 LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
@@ -76,6 +110,7 @@ def get_cleanup_candidates(
                 candidates.append(
                     {
                         "id": row["Z_PK"],
+                        "uuid": row["ZUUID"],
                         "filename": row["ZFILENAME"],
                         "created": created.isoformat() if created else None,
                         "size": row["ZORIGINALFILESIZE"] or 0,
@@ -88,7 +123,7 @@ def get_cleanup_candidates(
             cursor.execute(
                 """
                 SELECT
-                    a.Z_PK, a.ZFILENAME, a.ZDATECREATED,
+                    a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
                     aa.ZORIGINALFILESIZE
                 FROM ZASSET a
                 LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
@@ -106,6 +141,7 @@ def get_cleanup_candidates(
                 candidates.append(
                     {
                         "id": row["Z_PK"],
+                        "uuid": row["ZUUID"],
                         "filename": row["ZFILENAME"],
                         "created": created.isoformat() if created else None,
                         "size": row["ZORIGINALFILESIZE"] or 0,
@@ -137,6 +173,7 @@ def get_cleanup_candidates(
                     candidates.append(
                         {
                             "id": row["Z_PK"],
+                            "uuid": row["ZUUID"],
                             "filename": row["ZFILENAME"],
                             "created": created.isoformat() if created else None,
                             "size": row["ZORIGINALFILESIZE"] or 0,
@@ -152,7 +189,7 @@ def get_cleanup_candidates(
             cursor.execute(
                 """
                 SELECT
-                    a.Z_PK, a.ZFILENAME, a.ZDATECREATED,
+                    a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
                     a.ZFAVORITE,
                     aa.ZORIGINALFILESIZE,
                     a.ZDUPLICATEASSETVISIBILITYSTATE
@@ -172,6 +209,7 @@ def get_cleanup_candidates(
                 candidates.append(
                     {
                         "id": row["Z_PK"],
+                        "uuid": row["ZUUID"],
                         "filename": row["ZFILENAME"],
                         "created": created.isoformat() if created else None,
                         "size": row["ZORIGINALFILESIZE"] or 0,
@@ -193,41 +231,70 @@ def get_cleanup_candidates(
         }
 
 
-def generate_trash_applescript(filenames: list[str]) -> str:
+def generate_trash_applescript(candidates: list[dict[str, Any]]) -> str:
     """
-    Generate AppleScript to move items to trash by filename matching.
+    Generate AppleScript to move specific assets to trash.
 
-    Photos.app doesn't expose database IDs, so we match by filename.
-    This is the safest approach.
+    Each asset is looked up by its exact Photos identifier (``<UUID>/L0/001``),
+    derived from ZASSET.ZUUID. Two guards make this safe:
+
+    1. **Identity, not filename.** Photos filenames are not unique, so the old
+       filename-matching approach could trash an unrelated photo that happened
+       to share a name with a cleanup candidate.
+    2. **Filename cross-check.** After resolving an id we confirm the returned
+       item's filename matches what the database reported. Any mismatch, or any
+       id that fails to resolve, is skipped rather than deleted.
+
+    The script reports ``DELETED:<n> SKIPPED:<n>`` so the caller can record what
+    actually happened instead of assuming the whole batch succeeded.
 
     Args:
-        filenames: List of filenames to trash
+        candidates: Cleanup candidates, each needing a "uuid" and "filename"
 
     Returns:
         AppleScript string
+
+    Raises:
+        ValueError: If any candidate is missing a UUID
     """
-    # Build the filename matching list with proper escaping
-    filename_list = ", ".join(f'"{escape_applescript(fn)}"' for fn in filenames)
+    missing = [c.get("filename", "<unknown>") for c in candidates if not c.get("uuid")]
+    if missing:
+        raise ValueError(
+            f"Refusing to build a delete script: {len(missing)} candidate(s) have no UUID "
+            f"(e.g. {missing[0]!r}). Deleting by filename alone is unsafe."
+        )
+
+    id_list = ", ".join(f'"{escape_applescript(c["uuid"] + LOCAL_IDENTIFIER_SUFFIX)}"' for c in candidates)
+    name_list = ", ".join(f'"{escape_applescript(c["filename"] or "")}"' for c in candidates)
 
     script = f"""
-set targetNames to {{{filename_list}}}
-set matchCount to 0
+set targetIds to {{{id_list}}}
+set targetNames to {{{name_list}}}
+set itemsToDelete to {{}}
+set skippedCount to 0
 
 tell application "Photos"
-    repeat with targetName in targetNames
+    repeat with i from 1 to count of targetIds
         try
-            set matchingItems to (search for targetName)
-            repeat with anItem in matchingItems
-                if (filename of anItem) is equal to (contents of targetName) then
-                    delete anItem
-                    set matchCount to matchCount + 1
-                end if
-            end repeat
+            set theItem to media item id (item i of targetIds)
+            if (filename of theItem) is equal to (item i of targetNames) then
+                set end of itemsToDelete to theItem
+            else
+                set skippedCount to skippedCount + 1
+            end if
+        on error
+            -- id did not resolve (already deleted, or not in this library)
+            set skippedCount to skippedCount + 1
         end try
     end repeat
+
+    set deletedCount to count of itemsToDelete
+    if deletedCount > 0 then
+        delete itemsToDelete
+    end if
 end tell
 
-return matchCount & " items moved to Recently Deleted"
+return "DELETED:" & (deletedCount as text) & " SKIPPED:" & (skippedCount as text)
 """
     return script
 
@@ -250,7 +317,7 @@ def execute_cleanup(
     """
     total = len(candidates)
     total_size = sum(c["size"] for c in candidates)
-    results = {
+    results: dict[str, Any] = {
         "dry_run": dry_run,
         "total_candidates": total,
         "total_size": total_size,
@@ -258,6 +325,7 @@ def execute_cleanup(
         "batches": [],
         "errors": [],
         "success_count": 0,
+        "skipped_count": 0,
     }
 
     if dry_run:
@@ -270,9 +338,14 @@ def execute_cleanup(
     # Process in batches
     for i in range(0, total, batch_size):
         batch = candidates[i : i + batch_size]
-        filenames = [c["filename"] for c in batch]
+        batch_num = i // batch_size + 1
 
-        script = generate_trash_applescript(filenames)
+        try:
+            script = generate_trash_applescript(batch)
+        except ValueError as e:
+            results["batches"].append({"batch": batch_num, "count": len(batch), "status": "error", "error": str(e)})
+            results["errors"].append(str(e))
+            continue
 
         try:
             result = subprocess.run(
@@ -283,19 +356,31 @@ def execute_cleanup(
             )
 
             if result.returncode == 0:
+                output = result.stdout.strip()
+                match = _RESULT_RE.search(output)
+                if match:
+                    deleted, skipped = int(match.group(1)), int(match.group(2))
+                else:
+                    # Unparseable output: assume nothing was deleted rather than
+                    # over-reporting success.
+                    deleted, skipped = 0, len(batch)
+
                 results["batches"].append(
                     {
-                        "batch": i // batch_size + 1,
+                        "batch": batch_num,
                         "count": len(batch),
                         "status": "success",
-                        "output": result.stdout.strip(),
+                        "deleted": deleted,
+                        "skipped": skipped,
+                        "output": output,
                     }
                 )
-                results["success_count"] += len(batch)
+                results["success_count"] += deleted
+                results["skipped_count"] += skipped
             else:
                 results["batches"].append(
                     {
-                        "batch": i // batch_size + 1,
+                        "batch": batch_num,
                         "count": len(batch),
                         "status": "error",
                         "error": result.stderr.strip(),
@@ -304,14 +389,18 @@ def execute_cleanup(
                 results["errors"].append(result.stderr.strip())
 
         except subprocess.TimeoutExpired:
-            results["errors"].append(f"Batch {i // batch_size + 1} timed out")
+            results["errors"].append(f"Batch {batch_num} timed out")
         except Exception as e:
-            results["errors"].append(f"Batch {i // batch_size + 1}: {e!s}")
+            results["errors"].append(f"Batch {batch_num}: {e!s}")
 
-    results["message"] = (
-        f"Processed {results['success_count']}/{total} items. "
-        f"Check Recently Deleted in Photos.app to confirm or recover."
-    )
+    message = f"Moved {results['success_count']}/{total} items to Recently Deleted."
+    if results["skipped_count"]:
+        message += (
+            f" Skipped {results['skipped_count']} (asset not found in Photos, or its "
+            f"filename no longer matched the database)."
+        )
+    message += " Check Recently Deleted in Photos.app to confirm or recover."
+    results["message"] = message
     return results
 
 

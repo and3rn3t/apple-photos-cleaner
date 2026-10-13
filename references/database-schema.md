@@ -37,6 +37,7 @@ Main table containing all photos and videos.
 | Field | Type | Description |
 |-------|------|-------------|
 | `Z_PK` | INTEGER | Primary key (unique asset ID) |
+| `ZUUID` | TEXT | Stable per-asset UUID; the only safe way to address an asset from AppleScript (see below) |
 | `ZFILENAME` | TEXT | Original filename |
 | `ZDIRECTORY` | TEXT | Directory path within library |
 | `ZDATECREATED` | REAL | Timestamp when photo/video was taken (Core Data format) |
@@ -56,6 +57,30 @@ Main table containing all photos and videos.
 
 **Filtering Non-Trashed Items:**
 Always use `WHERE ZTRASHEDSTATE != 1` to exclude items in the trash.
+
+**Addressing Assets from AppleScript (`ZUUID`):**
+
+`ZFILENAME` is **not unique** — the same `IMG_0042.HEIC` can appear many times across
+devices and re-imports. Never match assets by filename when performing destructive
+operations.
+
+`ZUUID` is the stable identifier Photos uses internally. Photos exposes it to AppleScript
+as a local identifier with a `/L0/001` suffix:
+
+```applescript
+tell application "Photos"
+    set theItem to media item id "11111111-2222-3333-4444-555555555555/L0/001"
+end tell
+```
+
+`ZUUID` is not present in very old library versions, so verify it before relying on it:
+
+```sql
+PRAGMA table_info(ZASSET);  -- look for a ZUUID row
+```
+
+`scripts/cleanup_executor.py` does exactly this in `require_uuid_support()` and refuses
+to run rather than falling back to filename matching.
 
 ### ZADDITIONALASSETATTRIBUTES
 
