@@ -14,7 +14,20 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "ruff>=0.4.0",
+    "mypy>=1.8.0",
 ]
+
+# This project is consumed as a Claude skill — SKILL.md drives the scripts in
+# scripts/ by path, and tests import them via pytest's `pythonpath`. Nothing
+# imports an `apple_photos_cleaner` package, so there is nothing to package;
+# `pip install -e ".[dev]"` exists only to provision the dev toolchain.
+#
+# This must stay explicit: with no [tool.setuptools] section, auto-discovery
+# picked up references/ (a markdown docs directory) and installed it as a
+# top-level importable `references` namespace package, while shipping none of
+# the actual scripts.
+[tool.setuptools]
+py-modules = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -51,7 +64,9 @@ ignore = [
 known-first-party = ["_common"]
 
 [tool.mypy]
-python_version = "3.9"
+# No `python_version` pin: current mypy no longer supports targeting 3.9, and
+# setting it emits a warning on every run. Ruff's `target-version = "py39"`
+# (with the UP rules enabled) is what actually guards 3.9 compatibility.
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
