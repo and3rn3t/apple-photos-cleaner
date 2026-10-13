@@ -1,0 +1,129 @@
+# Publishes this skill to ClawHub as @and3rn3t/apple-photos-cleaner.
+#
+# SKILL.md frontmatter is the single source of truth for the version;
+# tests/test_skill_manifest.py (run by ci.yml) keeps pyproject.toml in step
+# with it and fails the build if they drift. Publishing is gated on that
+# version changing: bump `version:` in SKILL.md, merge to main, and this
+# publishes. Pushes that do not bump it are a no-op.
+#
+# Requires a CLAWHUB_TOKEN repository secret. Skill publishing is token-only —
+# ClawHub's OIDC trusted publishing covers packages, not skills. Print the
+# local token with `clawhub token`.
+name: Publish to ClawHub
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "SKILL.md"
+      - "scripts/**"
+      - "references/**"
+      - ".github/workflows/clawhub-publish.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Validate and report what would happen, without publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clawhub-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Pinned deliberately: this step publishes to a public registry, so the
+      # tool doing it should not change underneath us without a visible commit.
+      - name: Install ClawHub CLI
+        run: npm install -g clawhub@0.23.3
+
+      - name: Read version from SKILL.md
+        id: manifest
+        run: |
+          version=$(sed -n 's/^version: *//p' SKILL.md | head -1)
+          if [ -z "$version" ]; then
+            echo "::error file=SKILL.md::No 'version:' field in the frontmatter"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Manifest version: $version"
+
+      - name: Log in to ClawHub
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          if [ -z "$CLAWHUB_TOKEN" ]; then
+            echo "::error::CLAWHUB_TOKEN secret is not set. Add it in Settings → Secrets → Actions."
+            exit 1
+          fi
+          clawhub login --token "$CLAWHUB_TOKEN" --no-input
+          echo "Publishing as: $(clawhub whoami)"
+
+      # Compare against the registry explicitly rather than relying on the
+      # CLI's exit code: re-publishing an existing version is an error, and a
+      # push that does not bump the version must stay green.
+      - name: Check whether a publish is needed
+        id: check
+        run: |
+          latest=$(clawhub inspect apple-photos-cleaner --json \
+            | python3 -c "import json,sys;print(json.load(sys.stdin).get('latestVersion',{}).get('version',''))")
+          echo "Registry latest: ${latest:-<none>}"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+          if [ "$latest" = "${{ steps.manifest.outputs.version }}" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "Version unchanged — nothing to publish."
+            exit 0
+          fi
+
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Validate the bundle (dry run)
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          clawhub skill publish . \
+            --slug apple-photos-cleaner \
+            --version "${{ steps.manifest.outputs.version }}" \
+            --dry-run --json
+
+      - name: Publish
+        if: steps.check.outputs.needed == 'true' && !inputs.dry_run
+        run: |
+          clawhub skill publish . \
+            --slug apple-photos-cleaner \
+            --version "${{ steps.manifest.outputs.version }}" \
+            --topics "photos,macos,cleanup,duplicates,storage" \
+            --changelog "$(git log -1 --pretty=%s)" \
+            --source-repo "${{ github.repository }}" \
+            --source-commit "${{ github.sha }}" \
+            --source-ref "${{ github.ref }}" \
+            --json
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "### ClawHub"
+            echo ""
+            echo "- Manifest version: \`${{ steps.manifest.outputs.version }}\`"
+            echo "- Registry latest: \`${{ steps.check.outputs.latest || 'unknown' }}\`"
+            if [ "${{ steps.check.outputs.needed }}" != "true" ]; then
+              echo "- No publish — the registry already has this version."
+            elif [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "- Dry run: validated but **not** published."
+            else
+              echo "- Published to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
