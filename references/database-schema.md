@@ -82,6 +82,18 @@ PRAGMA table_info(ZASSET);  -- look for a ZUUID row
 `scripts/cleanup_executor.py` does exactly this in `require_uuid_support()` and refuses
 to run rather than falling back to filename matching.
 
+**Verified behaviour** (macOS 26.7.2, Photos 11.0, 12,059-item library):
+
+| Input | Result |
+|-------|--------|
+| Valid UUID, filename matches the database | Item resolves and is selected |
+| Valid UUID, filename no longer matches | Counted as skipped — **not** deleted |
+| UUID absent from the library | `media item id` raises; counted as skipped — **not** deleted |
+
+Every failure mode resolves to deleting nothing. The filename is only ever a
+second check *after* the UUID has already identified the asset — it is never
+used to find one.
+
 ### ZADDITIONALASSETATTRIBUTES
 
 Extended metadata for assets. Joined via `Z_PK` matching `ZASSET.Z_PK`.
