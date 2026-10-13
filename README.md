@@ -17,7 +17,8 @@ Goes beyond what Photos.app offers: intelligent junk detection, detailed storage
 ## Requirements
 
 - **macOS** (accesses the Photos SQLite database)
-- **Python 3.9+** (uses stdlib only — no external runtime dependencies)
+- **Python 3.10+** (uses stdlib only — no external runtime dependencies). Stock macOS
+  `/usr/bin/python3` is 3.9 and too old; install a current one with `brew install python`
 
 ## Setup
 

@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 name = "apple-photos-cleaner"
 version = "1.0.2"
 description = "Analyze, audit, and clean up your Apple Photos library via its SQLite database"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 
 [project.optional-dependencies]
@@ -71,9 +71,9 @@ known-first-party = ["_common"]
 fail_under = 80
 
 [tool.mypy]
-# No `python_version` pin: current mypy no longer supports targeting 3.9, and
-# setting it emits a warning on every run. Ruff's `target-version = "py39"`
-# (with the UP rules enabled) is what actually guards 3.9 compatibility.
+# No `python_version` pin: the type results are interpreter-independent, and
+# Ruff's `target-version` (with the UP rules enabled) is what actually guards
+# compatibility with the `requires-python` floor.
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
