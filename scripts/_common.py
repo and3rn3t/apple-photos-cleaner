@@ -429,6 +429,64 @@ def escape_applescript(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+# Photos exposes an asset's AppleScript `id` as "<UUID>/L0/001" for library assets.
+LOCAL_IDENTIFIER_SUFFIX = "/L0/001"
+
+
+def require_uuid_support(cursor: sqlite3.Cursor, operation: str) -> None:
+    """Verify the ZASSET table exposes ZUUID.
+
+    Targeting assets by UUID is what keeps AppleScript operations bounded to the
+    assets the user actually reviewed. Filenames are not unique — the same
+    IMG_0042.HEIC can appear many times across devices and re-imports — so a
+    filename match can hit assets outside the previewed set. If the column is
+    missing we refuse to proceed rather than silently falling back.
+
+    Args:
+        cursor: Open cursor on the Photos database.
+        operation: Human-readable name of the caller, used in the error message.
+
+    Raises:
+        RuntimeError: If ZASSET has no ZUUID column.
+    """
+    cursor.execute("PRAGMA table_info(ZASSET)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "ZUUID" not in columns:
+        raise RuntimeError(
+            f"ZASSET.ZUUID not found in this Photos database. {operation} cannot safely "
+            "identify assets without it and will not run. Please open an issue with "
+            "your macOS version."
+        )
+
+
+def build_identifier_lists(items: list[dict]) -> tuple[str, str]:
+    """Build the AppleScript `id` and filename list literals for *items*.
+
+    Both lists are positional: index *i* of the id list and index *i* of the
+    name list describe the same asset, which lets the generated script confirm
+    that a resolved item is the one the database pointed at.
+
+    Args:
+        items: Dicts carrying a "uuid" and a "filename".
+
+    Returns:
+        A ``(id_list, name_list)`` pair of comma-separated AppleScript literals.
+
+    Raises:
+        ValueError: If any item is missing a UUID.
+    """
+    missing = [item.get("filename", "<unknown>") for item in items if not item.get("uuid")]
+    if missing:
+        raise ValueError(
+            f"Refusing to build an AppleScript: {len(missing)} item(s) have no UUID "
+            f"(e.g. {missing[0]!r}). Matching by filename alone is unsafe."
+        )
+
+    id_list = ", ".join(f'"{escape_applescript(item["uuid"] + LOCAL_IDENTIFIER_SUFFIX)}"' for item in items)
+    name_list = ", ".join(f'"{escape_applescript(item["filename"] or "")}"' for item in items)
+    return id_list, name_list
+
+
 def sanitize_folder_name(name: str) -> str:
     """Sanitize a string for safe use as a folder/file name.
 

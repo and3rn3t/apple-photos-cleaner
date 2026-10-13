@@ -891,7 +891,7 @@ class TestCleanupExecutor:
         conn = sqlite3.connect(":memory:")
         conn.execute("CREATE TABLE ZASSET (Z_PK INTEGER PRIMARY KEY, ZFILENAME TEXT)")
         with pytest.raises(RuntimeError, match="ZUUID"):
-            require_uuid_support(conn.cursor())
+            require_uuid_support(conn.cursor(), "Cleanup")
         conn.close()
 
     def test_execute_cleanup_reports_actual_deletions(self):

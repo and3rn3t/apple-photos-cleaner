@@ -12,41 +12,28 @@ photo. See generate_trash_applescript for the matching rules.
 
 import argparse
 import re
-import sqlite3
 import subprocess
 import sys
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, escape_applescript, format_size, output_json
+from _common import (
+    LOCAL_IDENTIFIER_SUFFIX,
+    PhotosDB,
+    build_identifier_lists,
+    coredata_to_datetime,
+    format_size,
+    output_json,
+    require_uuid_support,
+)
 
 # Maximum items per AppleScript batch (Photos.app can be slow with large batches)
 MAX_BATCH_SIZE = 50
 
-# Photos exposes an asset's AppleScript `id` as "<UUID>/L0/001" for library assets.
-LOCAL_IDENTIFIER_SUFFIX = "/L0/001"
-
 # Counters reported back by the generated AppleScript.
 _RESULT_RE = re.compile(r"DELETED:(\d+)\s+SKIPPED:(\d+)")
 
-
-def require_uuid_support(cursor: sqlite3.Cursor) -> None:
-    """Verify the ZASSET table exposes ZUUID.
-
-    Targeting assets by UUID is what makes deletion safe. If the column is
-    missing we refuse to proceed rather than silently falling back to
-    filename matching, which can delete the wrong photo.
-
-    Raises:
-        RuntimeError: If ZASSET has no ZUUID column.
-    """
-    cursor.execute("PRAGMA table_info(ZASSET)")
-    columns = {row[1] for row in cursor.fetchall()}
-    if "ZUUID" not in columns:
-        raise RuntimeError(
-            "ZASSET.ZUUID not found in this Photos database. Cleanup cannot safely "
-            "identify assets without it and will not run. Please open an issue with "
-            "your macOS version."
-        )
+# Re-exported for callers and tests that import it from this module.
+__all__ = ["LOCAL_IDENTIFIER_SUFFIX", "generate_trash_applescript", "require_uuid_support"]
 
 
 def get_cleanup_candidates(
@@ -72,7 +59,7 @@ def get_cleanup_candidates(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
-        require_uuid_support(cursor)
+        require_uuid_support(cursor, "Cleanup")
 
         candidates = []
 
@@ -257,15 +244,7 @@ def generate_trash_applescript(candidates: list[dict[str, Any]]) -> str:
     Raises:
         ValueError: If any candidate is missing a UUID
     """
-    missing = [c.get("filename", "<unknown>") for c in candidates if not c.get("uuid")]
-    if missing:
-        raise ValueError(
-            f"Refusing to build a delete script: {len(missing)} candidate(s) have no UUID "
-            f"(e.g. {missing[0]!r}). Deleting by filename alone is unsafe."
-        )
-
-    id_list = ", ".join(f'"{escape_applescript(c["uuid"] + LOCAL_IDENTIFIER_SUFFIX)}"' for c in candidates)
-    name_list = ", ".join(f'"{escape_applescript(c["filename"] or "")}"' for c in candidates)
+    id_list, name_list = build_identifier_lists(candidates)
 
     script = f"""
 set targetIds to {{{id_list}}}
