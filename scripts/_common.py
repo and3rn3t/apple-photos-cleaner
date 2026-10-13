@@ -21,6 +21,8 @@ logger = logging.getLogger("apple_photos_cleaner")
 
 # Core Data reference date (January 1, 2001 00:00:00 UTC)
 CORE_DATA_EPOCH = datetime(2001, 1, 1, 0, 0, 0)
+# Seconds between the Unix epoch and the Core Data epoch
+CORE_DATA_UNIX_OFFSET = 978307200
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -119,6 +121,53 @@ def coredata_to_datetime(timestamp: float | None) -> datetime | None:
     if timestamp is None:
         return None
     return CORE_DATA_EPOCH + timedelta(seconds=timestamp)
+
+
+def coredata_to_local(timestamp: float | None, tz_offset: int | None) -> datetime | None:
+    """
+    Convert a Core Data timestamp to the naive local wall-clock time it was taken at.
+
+    Photos records each asset's UTC offset at capture time
+    (ZADDITIONALASSETATTRIBUTES.ZTIMEZONEOFFSET, in seconds). When it is known it wins,
+    so a photo taken at 23:30 in Chicago stays 23:30 even when analyzed in Tokyo.
+    When it is missing, fall back to the system time zone.
+
+    Use this for anything bucketed by hour, day, month or year. coredata_to_datetime()
+    stays UTC.
+    """
+    if timestamp is None:
+        return None
+    if tz_offset is not None:
+        return CORE_DATA_EPOCH + timedelta(seconds=timestamp + tz_offset)
+    return datetime.fromtimestamp(timestamp + CORE_DATA_UNIX_OFFSET)
+
+
+def has_timezone_offset(cursor: sqlite3.Cursor) -> bool:
+    """Whether this library's schema records a per-asset capture time zone offset."""
+    cursor.execute("PRAGMA table_info(ZADDITIONALASSETATTRIBUTES)")
+    return any(row[1] == "ZTIMEZONEOFFSET" for row in cursor.fetchall())
+
+
+def tz_offset_sql(tz_offset_available: bool, attrs: str = "aa") -> str:
+    """SELECT expression for the capture offset; NULL when the schema lacks the column."""
+    return f"{attrs}.ZTIMEZONEOFFSET" if tz_offset_available else "NULL"
+
+
+def local_datetime_sql(tz_offset_available: bool, asset: str = "a", attrs: str = "aa") -> str:
+    """
+    SQL expression for an asset's local capture time, the SQL twin of coredata_to_local().
+
+    Requires `LEFT JOIN ZADDITIONALASSETATTRIBUTES {attrs}` in the query when the
+    offset is available. Wrap it in strftime() to bucket by year, month, day or hour.
+    """
+    unix = f"{asset}.ZDATECREATED + {CORE_DATA_UNIX_OFFSET}"
+    if not tz_offset_available:
+        return f"datetime({unix}, 'unixepoch', 'localtime')"
+    return (
+        f"(CASE WHEN {attrs}.ZTIMEZONEOFFSET IS NOT NULL "
+        f"THEN datetime({unix} + {attrs}.ZTIMEZONEOFFSET, 'unixepoch') "
+        f"ELSE datetime({unix}, 'unixepoch', 'localtime') END)"
+    )
 
 
 def datetime_to_coredata(dt: datetime) -> float:
@@ -344,6 +393,7 @@ def build_asset_query(
     join_computed: bool = False,
     order_by: str | None = None,
     limit: int | None = None,
+    tz_offset_available: bool = False,
 ) -> str:
     """
     Build a query for ZASSET table with optional joins and filters.
@@ -354,6 +404,8 @@ def build_asset_query(
         join_computed: Join ZCOMPUTEDASSETATTRIBUTES
         order_by: ORDER BY clause
         limit: LIMIT value
+        tz_offset_available: Schema has ZTIMEZONEOFFSET (see has_timezone_offset);
+            with join_additional, selects it as `tz_offset` for coredata_to_local()
 
     Returns:
         SQL query string
@@ -362,10 +414,15 @@ def build_asset_query(
     query = "SELECT a.*"
 
     if join_additional:
-        query += """,
+        query += (
+            """,
             aa.ZORIGINALFILESIZE,
             aa.ZORIGINALHEIGHT,
-            aa.ZORIGINALWIDTH"""
+            aa.ZORIGINALWIDTH,
+            """
+            + tz_offset_sql(tz_offset_available)
+            + " AS tz_offset"
+        )
 
     if join_computed:
         query += """,

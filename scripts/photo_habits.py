@@ -8,7 +8,16 @@ import sys
 from collections import defaultdict
 from typing import Any
 
-from _common import PhotosDB, coredata_to_datetime, format_size, run_script, validate_year
+from _common import (
+    PhotosDB,
+    coredata_to_local,
+    format_size,
+    has_timezone_offset,
+    local_datetime_sql,
+    run_script,
+    tz_offset_sql,
+    validate_year,
+)
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -29,12 +38,13 @@ def analyze_habits(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         year_filter = ""
         year_params: list = []
         if year:
             year = validate_year(year)
-            year_filter = "AND strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?"
+            year_filter = f"AND strftime('%Y', {local_datetime_sql(tz_available)}) = ?"
             year_params = [year]
 
         # Get all non-trashed assets with timestamps
@@ -45,7 +55,8 @@ def analyze_habits(
                 a.ZKIND,
                 a.ZFAVORITE,
                 a.ZISDETECTEDSCREENSHOT,
-                aa.ZORIGINALFILESIZE
+                aa.ZORIGINALFILESIZE,
+                {tz_offset_sql(tz_available)} AS tz_offset
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
             WHERE a.ZTRASHEDSTATE != 1
@@ -78,13 +89,13 @@ def analyze_habits(
         last_date = None
 
         for row in cursor:
-            dt = coredata_to_datetime(row["ZDATECREATED"])
+            dt = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
             if dt is None:
                 continue
 
-            if first_date is None:
-                first_date = dt
-            last_date = dt
+            # Rows are in UTC order, which isn't local order across time zones
+            first_date = dt if first_date is None else min(first_date, dt)
+            last_date = dt if last_date is None else max(last_date, dt)
 
             is_video = row["ZKIND"] == 1
             is_screenshot = bool(row["ZISDETECTEDSCREENSHOT"])
@@ -361,7 +372,7 @@ def format_summary(data: dict[str, Any]) -> str:
 
 def main():
     def add_args(parser):
-        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+        parser.add_argument("--year", help="Filter to specific year (YYYY, local capture time)")
 
     def invoke(db_path, args):
         return analyze_habits(

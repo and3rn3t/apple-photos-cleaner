@@ -13,9 +13,11 @@ from typing import Any
 from _common import (
     PhotosDB,
     _safe_float,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
+    has_timezone_offset,
     run_script,
+    tz_offset_sql,
 )
 
 
@@ -77,6 +79,7 @@ def analyze_face_quality(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         # Check for face detection tables
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ZDETECTEDFACE'")
@@ -115,6 +118,7 @@ def analyze_face_quality(
             "a.ZWIDTH",
             "a.ZHEIGHT",
             "aa.ZORIGINALFILESIZE",
+            f"{tz_offset_sql(tz_available)} AS tz_offset",
         ]
 
         optional_cols = {
@@ -167,7 +171,7 @@ def analyze_face_quality(
                 }
 
             face_score = compute_face_score(rd)
-            created = coredata_to_datetime(rd["ZDATECREATED"])
+            created = coredata_to_local(rd["ZDATECREATED"], rd["tz_offset"])
 
             face = {
                 "asset_id": rd["ZASSET"],

@@ -5,6 +5,7 @@ Shared fixtures for all test modules.
 
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from datetime import datetime
 
 from _common import datetime_to_coredata
+
+
+@pytest.fixture(autouse=True)
+def pin_utc(monkeypatch):
+    """Run every test in UTC so results don't depend on the machine's zone.
+
+    Scripts fall back to the system zone for assets without a capture offset;
+    tests that exercise that fallback pin their own zone on top of this.
+    """
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
 
 
 @pytest.fixture

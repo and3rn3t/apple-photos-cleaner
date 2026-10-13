@@ -12,9 +12,11 @@ from typing import Any
 from _common import (
     PhotosDB,
     _safe_col,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
+    has_timezone_offset,
     run_script,
+    tz_offset_sql,
 )
 
 
@@ -29,6 +31,7 @@ def analyze_shared_library(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         # Check which columns are available
         cursor.execute("PRAGMA table_info(ZASSET)")
@@ -59,6 +62,7 @@ def analyze_shared_library(
             "a.ZFAVORITE",
             "a.ZLIBRARYSCOPE",
             "aa.ZORIGINALFILESIZE",
+            f"{tz_offset_sql(tz_available)} AS tz_offset",
         ]
         if has_shared_id:
             select_cols.append("a.ZSHAREDLIBRARYSCOPEIDENTIFIER")
@@ -93,7 +97,7 @@ def analyze_shared_library(
             kind = rd.get("ZKIND", 0) or 0
             is_shared = scope != 0
 
-            created = coredata_to_datetime(rd["ZDATECREATED"])
+            created = coredata_to_local(rd["ZDATECREATED"], rd["tz_offset"])
             yr = str(created.year) if created else "Unknown"
             mo = created.strftime("%Y-%m") if created else "Unknown"
 

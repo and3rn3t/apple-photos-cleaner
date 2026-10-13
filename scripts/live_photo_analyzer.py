@@ -10,10 +10,13 @@ from typing import Any
 from _common import (
     PhotosDB,
     _safe_col,
-    coredata_to_datetime,
+    coredata_to_local,
     format_size,
     get_quality_score,
+    has_timezone_offset,
+    local_datetime_sql,
     run_script,
+    tz_offset_sql,
     validate_year,
 )
 
@@ -45,6 +48,7 @@ def analyze_live_photos(
     """
     with PhotosDB(db_path) as conn:
         cursor = conn.cursor()
+        tz_available = has_timezone_offset(cursor)
 
         # Check which columns exist
         cursor.execute("PRAGMA table_info(ZASSET)")
@@ -79,6 +83,7 @@ def analyze_live_photos(
             "a.ZWIDTH",
             "a.ZHEIGHT",
             "aa.ZORIGINALFILESIZE",
+            f"{tz_offset_sql(tz_available)} AS tz_offset",
         ]
         if has_subtype:
             select_cols.append("a.ZKINDSUBTYPE")
@@ -99,7 +104,7 @@ def analyze_live_photos(
         params: list = []
         if year:
             year = validate_year(year)
-            where.append("strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) = ?")
+            where.append(f"strftime('%Y', {local_datetime_sql(tz_available)}) = ?")
             params.append(year)
 
         query = f"""
@@ -126,7 +131,7 @@ def analyze_live_photos(
             size = rd.get("ZORIGINALFILESIZE") or 0
             is_live = subtype == LIVE_PHOTO_SUBTYPE or playback >= PLAYBACK_LIVE
 
-            created = coredata_to_datetime(rd["ZDATECREATED"])
+            created = coredata_to_local(rd["ZDATECREATED"], rd["tz_offset"])
             yr = str(created.year) if created else "Unknown"
 
             if yr not in by_year:
@@ -248,7 +253,7 @@ def format_summary(data: dict[str, Any]) -> str:
 
 def main():
     def add_args(parser):
-        parser.add_argument("--year", help="Filter to specific year (YYYY)")
+        parser.add_argument("--year", help="Filter to specific year (YYYY, local capture time)")
 
     def invoke(db_path, args):
         return analyze_live_photos(db_path=db_path, year=args.year)

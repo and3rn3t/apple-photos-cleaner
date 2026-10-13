@@ -1246,6 +1246,7 @@ files like the photos they describe.
 - **Reverse geocoding** — Offline lookup covers ~100 major world cities; remote locations show coordinates
 - **Similarity detection** — Uses computed quality vectors (not pixel-level); O(n²) comparison limited by `--limit`
 - **Shared Library columns** — Requires macOS 13+ / iOS 16+ database format
+- **Dates are local capture time** — Years, days, hours and `--year`/`--start-date`/`--end-date` use the time zone each photo was taken in; photos with no recorded zone fall back to this Mac's current zone
 - **Empty library support** — Scripts work on any library, but Matt's Mac mini library is empty (synced elsewhere)
 - **Schema changes** — Apple may change database schema in future macOS versions
 

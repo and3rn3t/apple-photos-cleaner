@@ -4,16 +4,18 @@ Analyze Apple Photos library: counts, storage, date ranges, people, quality scor
 """
 
 import sys
+from datetime import datetime
 from typing import Any
 
 from _common import (
     PhotosDB,
-    coredata_to_datetime,
     detect_face_schema,
     format_date_range,
     format_size,
     get_asset_kind_name,
     get_quality_score,
+    has_timezone_offset,
+    local_datetime_sql,
     run_script,
 )
 
@@ -64,22 +66,27 @@ def analyze_library(db_path: str | None = None) -> dict[str, Any]:
         """)
         hidden_count = cursor.fetchone()["count"]
 
-        # Date range
-        cursor.execute("""
-            SELECT MIN(ZDATECREATED) as min_date, MAX(ZDATECREATED) as max_date
-            FROM ZASSET WHERE ZTRASHEDSTATE != 1
+        # Date range, in local capture time
+        tz_available = has_timezone_offset(cursor)
+        local_dt = local_datetime_sql(tz_available)
+        cursor.execute(f"""
+            SELECT MIN({local_dt}) as min_date, MAX({local_dt}) as max_date
+            FROM ZASSET a
+            LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
+            WHERE a.ZTRASHEDSTATE != 1 AND a.ZDATECREATED IS NOT NULL
         """)
         date_row = cursor.fetchone()
-        min_date = coredata_to_datetime(date_row["min_date"])
-        max_date = coredata_to_datetime(date_row["max_date"])
+        min_date = datetime.fromisoformat(date_row["min_date"]) if date_row["min_date"] else None
+        max_date = datetime.fromisoformat(date_row["max_date"]) if date_row["max_date"] else None
 
         # By year
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
-                strftime('%Y', datetime(ZDATECREATED + 978307200, 'unixepoch')) as year,
+                strftime('%Y', {local_dt}) as year,
                 COUNT(*) as count
-            FROM ZASSET
-            WHERE ZTRASHEDSTATE != 1
+            FROM ZASSET a
+            LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
+            WHERE a.ZTRASHEDSTATE != 1
             GROUP BY year
             ORDER BY year
         """)
@@ -111,9 +118,9 @@ def analyze_library(db_path: str | None = None) -> dict[str, Any]:
         storage_by_kind = {get_asset_kind_name(row["ZKIND"]): row["total_bytes"] or 0 for row in cursor.fetchall()}
 
         # Storage by year
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
-                strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) as year,
+                strftime('%Y', {local_dt}) as year,
                 SUM(aa.ZORIGINALFILESIZE) as total_bytes
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
