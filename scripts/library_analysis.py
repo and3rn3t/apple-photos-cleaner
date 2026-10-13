@@ -128,10 +128,10 @@ def analyze_library(db_path: Optional[str] = None) -> dict[str, Any]:
         cursor.execute(f"""
             SELECT
                 p.ZFULLNAME,
-                COUNT(DISTINCT df.{schema['asset_fk']}) as photo_count
+                COUNT(DISTINCT df.{schema["asset_fk"]}) as photo_count
             FROM ZPERSON p
-            JOIN ZDETECTEDFACE df ON p.Z_PK = df.{schema['person_fk']}
-            JOIN ZASSET a ON df.{schema['asset_fk']} = a.Z_PK
+            JOIN ZDETECTEDFACE df ON p.Z_PK = df.{schema["person_fk"]}
+            JOIN ZASSET a ON df.{schema["asset_fk"]} = a.Z_PK
             WHERE a.ZTRASHEDSTATE != 1
             GROUP BY p.Z_PK
             ORDER BY photo_count DESC

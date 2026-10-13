@@ -38,10 +38,10 @@ def analyze_people(
                 p.Z_PK as person_id,
                 p.ZFULLNAME as name,
                 p.ZFACECOUNT as face_count,
-                COUNT(DISTINCT df.{schema['asset_fk']}) as photo_count
+                COUNT(DISTINCT df.{schema["asset_fk"]}) as photo_count
             FROM ZPERSON p
-            JOIN ZDETECTEDFACE df ON p.Z_PK = df.{schema['person_fk']}
-            JOIN ZASSET a ON df.{schema['asset_fk']} = a.Z_PK
+            JOIN ZDETECTEDFACE df ON p.Z_PK = df.{schema["person_fk"]}
+            JOIN ZASSET a ON df.{schema["asset_fk"]} = a.Z_PK
             WHERE p.ZFULLNAME IS NOT NULL
             AND p.ZFULLNAME != ''
             AND a.ZTRASHEDSTATE != 1
@@ -65,10 +65,10 @@ def analyze_people(
 
         # Get unnamed face count
         cursor.execute(f"""
-            SELECT COUNT(DISTINCT df.{schema['asset_fk']}) as count
+            SELECT COUNT(DISTINCT df.{schema["asset_fk"]}) as count
             FROM ZDETECTEDFACE df
-            JOIN ZASSET a ON df.{schema['asset_fk']} = a.Z_PK
-            WHERE (df.{schema['person_fk']} IS NULL OR df.{schema['person_fk']} NOT IN (
+            JOIN ZASSET a ON df.{schema["asset_fk"]} = a.Z_PK
+            WHERE (df.{schema["person_fk"]} IS NULL OR df.{schema["person_fk"]} NOT IN (
                 SELECT Z_PK FROM ZPERSON WHERE ZFULLNAME IS NOT NULL AND ZFULLNAME != ''
             ))
             AND a.ZTRASHEDSTATE != 1
@@ -87,8 +87,8 @@ def analyze_people(
                     strftime('%Y', datetime(a.ZDATECREATED + 978307200, 'unixepoch')) as year,
                     COUNT(*) as count
                 FROM ZASSET a
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
-                WHERE df.{schema['person_fk']} = ?
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema["asset_fk"]}
+                WHERE df.{schema["person_fk"]} = ?
                 AND a.ZTRASHEDSTATE != 1
                 GROUP BY year
                 ORDER BY year
@@ -110,9 +110,9 @@ def analyze_people(
                     ca.ZPLEASANTCOMPOSITIONSCORE,
                     ca.ZPLEASANTLIGHTINGSCORE
                 FROM ZASSET a
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema["asset_fk"]}
                 LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
-                WHERE df.{schema['person_fk']} = ?
+                WHERE df.{schema["person_fk"]} = ?
                 AND a.ZTRASHEDSTATE != 1
                 AND a.ZKIND = 0
                 ORDER BY ca.ZPLEASANTCOMPOSITIONSCORE DESC NULLS LAST
@@ -140,8 +140,8 @@ def analyze_people(
                 f"""
                 SELECT COUNT(*) as count
                 FROM ZASSET a
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
-                WHERE df.{schema['person_fk']} = ?
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema["asset_fk"]}
+                WHERE df.{schema["person_fk"]} = ?
                 AND a.ZTRASHEDSTATE != 1
                 AND a.ZFAVORITE = 1
             """,
@@ -156,8 +156,8 @@ def analyze_people(
                     MIN(a.ZDATECREATED) as first,
                     MAX(a.ZDATECREATED) as last
                 FROM ZASSET a
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
-                WHERE df.{schema['person_fk']} = ?
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema["asset_fk"]}
+                WHERE df.{schema["person_fk"]} = ?
                 AND a.ZTRASHEDSTATE != 1
             """,
                 (pid,),
@@ -186,12 +186,12 @@ def analyze_people(
             # Find photos with multiple named people
             cursor.execute(
                 f"""
-                SELECT df.{schema['asset_fk']} as asset_id, df.{schema['person_fk']} as person_id
+                SELECT df.{schema["asset_fk"]} as asset_id, df.{schema["person_fk"]} as person_id
                 FROM ZDETECTEDFACE df
-                JOIN ZASSET a ON df.{schema['asset_fk']} = a.Z_PK
-                WHERE df.{schema['person_fk']} IN ({placeholders})
+                JOIN ZASSET a ON df.{schema["asset_fk"]} = a.Z_PK
+                WHERE df.{schema["person_fk"]} IN ({placeholders})
                 AND a.ZTRASHEDSTATE != 1
-                ORDER BY df.{schema['asset_fk']}
+                ORDER BY df.{schema["asset_fk"]}
             """,
                 person_ids,
             )

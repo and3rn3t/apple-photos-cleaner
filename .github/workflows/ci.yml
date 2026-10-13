@@ -28,10 +28,10 @@ jobs:
         run: pip install ".[dev]"
 
       - name: Lint with ruff
-        run: ruff check scripts/ tests/
+        run: ruff check .
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
       - name: Check formatting
-        run: ruff format --check scripts/ tests/
+        run: ruff format --check .

@@ -12,7 +12,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional
 
-from _common import PhotosDB, coredata_to_datetime, detect_face_schema, escape_applescript, format_size, sanitize_folder_name
+from _common import (
+    PhotosDB,
+    coredata_to_datetime,
+    detect_face_schema,
+    escape_applescript,
+    format_size,
+    sanitize_folder_name,
+)
 
 
 def generate_export_plan(
@@ -87,8 +94,8 @@ def generate_export_plan(
         # Add person filter if specified
         if person_name:
             query += f"""
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema['asset_fk']}
-                JOIN ZPERSON p ON df.{schema['person_fk']} = p.Z_PK
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema["asset_fk"]}
+                JOIN ZPERSON p ON df.{schema["person_fk"]} = p.Z_PK
             """
             where_clauses.append("p.ZFULLNAME = ?")
             params.append(person_name)

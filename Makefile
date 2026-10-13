@@ -26,13 +26,13 @@ coverage:
 	$(PYTEST) tests/ -v --cov=scripts --cov-report=term-missing --cov-report=html
 
 lint:
-	$(PYTHON) -m ruff check scripts/ tests/
+	$(PYTHON) -m ruff check .
 
 format:
-	$(PYTHON) -m ruff format scripts/ tests/
+	$(PYTHON) -m ruff format .
 
 check: lint
-	$(PYTHON) -m ruff format --check scripts/ tests/
+	$(PYTHON) -m ruff format --check .
 	$(PYTEST) tests/ -v
 
 clean:

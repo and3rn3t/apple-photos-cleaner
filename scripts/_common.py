@@ -289,20 +289,20 @@ def format_date_range(start: Optional[datetime], end: Optional[datetime]) -> str
 def detect_face_schema(cursor: sqlite3.Cursor) -> dict[str, str]:
     """
     Detect which schema version Photos is using for ZDETECTEDFACE table.
-    
+
     Returns dict with 'person_fk' and 'asset_fk' keys pointing to correct column names.
-    
+
     Older macOS: ZPERSON, ZASSET
     Newer macOS (Sequoia+): ZPERSONFORFACE, ZASSETFORFACE
     """
     cursor.execute("PRAGMA table_info(ZDETECTEDFACE)")
     columns = {row[1] for row in cursor.fetchall()}
-    
-    if 'ZPERSONFORFACE' in columns and 'ZASSETFORFACE' in columns:
-        return {'person_fk': 'ZPERSONFORFACE', 'asset_fk': 'ZASSETFORFACE'}
+
+    if "ZPERSONFORFACE" in columns and "ZASSETFORFACE" in columns:
+        return {"person_fk": "ZPERSONFORFACE", "asset_fk": "ZASSETFORFACE"}
     else:
         # Fallback to old schema
-        return {'person_fk': 'ZPERSON', 'asset_fk': 'ZASSET'}
+        return {"person_fk": "ZPERSON", "asset_fk": "ZASSET"}
 
 
 class PhotosDB:
