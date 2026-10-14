@@ -200,3 +200,40 @@ class TestScripts:
         # TOKYO is local 2026-01-01 and excluded only if 2026 is the current year
         expected = ["CHICAGO.heic"] if datetime.now().year == 2026 else ["CHICAGO.heic", "TOKYO.heic"]
         assert names == expected
+
+
+class TestDstBoundaries:
+    """The NULL-offset fallback must apply the zone's rules at capture time, not today's offset.
+
+    America/New_York, 2025: clocks jump 02:00 → 03:00 EDT on Mar 9 (07:00 UTC) and fall
+    back 02:00 → 01:00 EST on Nov 2 (06:00 UTC).
+    """
+
+    CASES = (
+        (datetime(2025, 3, 9, 6, 59), datetime(2025, 3, 9, 1, 59)),  # last minute of EST
+        (datetime(2025, 3, 9, 7, 1), datetime(2025, 3, 9, 3, 1)),  # first minute of EDT; 02:xx never happens
+        (datetime(2025, 11, 2, 5, 30), datetime(2025, 11, 2, 1, 30)),  # 01:30 EDT
+        (datetime(2025, 11, 2, 6, 30), datetime(2025, 11, 2, 1, 30)),  # 01:30 again, now EST
+    )
+
+    @pytest.mark.parametrize(("utc", "local"), CASES)
+    def test_python_fallback(self, new_york_tz, utc, local):
+        assert coredata_to_local(datetime_to_coredata(utc), None) == local
+
+    @pytest.mark.parametrize(("utc", "local"), CASES)
+    def test_sql_fallback_matches(self, new_york_tz, utc, local):
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE ZASSET (ZDATECREATED REAL)")
+        conn.execute("INSERT INTO ZASSET VALUES (?)", (datetime_to_coredata(utc),))
+        (value,) = conn.execute(f"SELECT {local_datetime_sql(False)} FROM ZASSET a").fetchone()
+        assert datetime.fromisoformat(value) == local
+
+    @pytest.mark.parametrize(
+        ("utc", "offset", "local"),
+        [
+            (datetime(2025, 7, 1, 16, 0), -4 * 3600, datetime(2025, 7, 1, 12, 0)),  # recorded EDT
+            (datetime(2025, 1, 1, 17, 0), -5 * 3600, datetime(2025, 1, 1, 12, 0)),  # recorded EST
+        ],
+    )
+    def test_recorded_offset_ignores_system_dst(self, new_york_tz, utc, offset, local):
+        assert coredata_to_local(datetime_to_coredata(utc), offset) == local

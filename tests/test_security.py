@@ -469,6 +469,28 @@ class TestCleanupConfirmation:
         assert code == ExitCode.CONFIRMATION_REQUIRED
         osascript.assert_not_called()
 
+    def test_token_is_stale_once_the_library_changes(self, cli, capsys, db_file):
+        """A new screenshot arriving between preview and execute must not ride along."""
+        module, argv = cli
+        token = self.preview_token(cli, capsys)
+
+        writer = sqlite3.connect(db_file)
+        writer.executescript("""
+            CREATE TEMP TABLE new_asset AS SELECT * FROM ZASSET WHERE ZISDETECTEDSCREENSHOT = 1 LIMIT 1;
+            UPDATE new_asset SET Z_PK = Z_PK + 1000, ZUUID = 'ARRIVED-AFTER-PREVIEW';
+            INSERT INTO ZASSET SELECT * FROM new_asset;
+        """)
+        writer.commit()
+        writer.close()
+
+        with patch("cleanup_executor.subprocess.run") as osascript:
+            code, out = run_main(module, [*argv, "--execute", "--confirm", token], capsys)
+        assert code == ExitCode.CONFIRMATION_REQUIRED
+        osascript.assert_not_called()
+        refreshed = json.loads(out)
+        assert refreshed["confirm_token"] != token
+        assert "ARRIVED-AFTER-PREVIEW" in {c["uuid"] for c in refreshed["candidates"]}
+
     def test_piped_yes_is_not_a_confirmation(self, cli, capsys, monkeypatch):
         module, argv = cli
         monkeypatch.setattr("sys.stdin", io.StringIO("yes\n"))
@@ -526,6 +548,30 @@ class TestExportConfirmation:
         assert code == ExitCode.OK
         osascript.assert_called_once()
         assert json.loads(out)["exported"] == 1
+
+    def test_token_is_stale_once_the_library_changes(self, cli, capsys, db_file):
+        """A favorite added between plan and export must not be exported under the old token."""
+        module, argv = cli
+        _, out = run_main(module, [*argv, "--plan-only"], capsys)
+        token = json.loads(out)["confirm_token"]
+
+        writer = sqlite3.connect(db_file)
+        writer.executescript("""
+            CREATE TEMP TABLE new_asset AS SELECT * FROM ZASSET WHERE ZFAVORITE = 1 AND ZTRASHEDSTATE != 1 LIMIT 1;
+            UPDATE new_asset SET Z_PK = Z_PK + 1000, ZUUID = 'ARRIVED-AFTER-PLAN';
+            INSERT INTO ZASSET SELECT * FROM new_asset;
+        """)
+        writer.commit()
+        writer.close()
+
+        with patch("smart_export.subprocess.run") as osascript:
+            code, out = run_main(module, [*argv, "--confirm", token], capsys)
+        assert code == ExitCode.CONFIRMATION_REQUIRED
+        osascript.assert_not_called()
+        refreshed = json.loads(out)
+        assert refreshed["confirm_token"] != token
+        planned = {item["uuid"] for folder in refreshed["folders"].values() for item in folder["items"]}
+        assert "ARRIVED-AFTER-PLAN" in planned
 
     def test_token_is_bound_to_output_dir(self, cli, capsys, tmp_path):
         module, argv = cli
