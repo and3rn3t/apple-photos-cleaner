@@ -46,20 +46,32 @@ def required_columns(module, script: str) -> tuple[str, ...]:
 EXTRA_COLUMNS = [
     ("ZASSET", "ZCLOUDLOCALSTATE INTEGER DEFAULT 1"),
     ("ZASSET", "ZCLOUDISMYASSET INTEGER DEFAULT 1"),
-    ("ZASSET", "ZCLOUDBATCHPUBLISHDATE REAL DEFAULT 700000000"),
     ("ZASSET", "ZCLOUDISDOWNLOADABLE INTEGER DEFAULT 1"),
-    ("ZASSET", "ZVISIBILITYSTATE INTEGER DEFAULT 0"),
     ("ZASSET", "ZKINDSUBTYPE INTEGER DEFAULT 2"),
     ("ZASSET", "ZPLAYBACKSTYLE INTEGER DEFAULT 3"),
     ("ZASSET", "ZLIBRARYSCOPE INTEGER DEFAULT 0"),
     ("ZASSET", "ZSHAREDLIBRARYSCOPEIDENTIFIER INTEGER"),
-    ("ZASSET", "ZACTIVELIBRARYSCOPEPARTICIPATIONSTATE INTEGER DEFAULT 0"),
     ("ZDETECTEDFACE", "ZQUALITYMEASURE REAL DEFAULT 0.6"),
     ("ZDETECTEDFACE", "ZBLURSCORE REAL DEFAULT 0.1"),
     ("ZDETECTEDFACE", "ZSMILESCORE REAL DEFAULT 0.5"),
+    ("ZDETECTEDFACE", "ZSIZE REAL DEFAULT 0.2"),
+    ("ZDETECTEDFACE", "ZYAWANGLE REAL DEFAULT 0.1"),
+    ("ZDETECTEDFACE", "ZFACEISINCENTER INTEGER DEFAULT 1"),
     ("ZCOMPUTEDASSETATTRIBUTES", "ZHARMONIOUSCOLORSCORE REAL DEFAULT 0.5"),
     ("ZCOMPUTEDASSETATTRIBUTES", "ZPLEASANTWALLPAPERSCORE REAL DEFAULT 0.5"),
     ("ZCOMPUTEDASSETATTRIBUTES", "ZWEIGHTEDSCENECLASSIFICATIONSCORE REAL DEFAULT 0.5"),
+    *(
+        ("ZCOMPUTEDASSETATTRIBUTES", f"{column} REAL DEFAULT 0.5")
+        for column in (
+            "ZPLEASANTCOLORHUESCORE",
+            "ZIMMERSIVENESSSCORE",
+            "ZINTERACTIONSCORE",
+            "ZPLEASANTSHARPSCORE",
+            "ZTASTEFULLYBLURREDSCORE",
+            "ZWELLFRAMEDSUBJECTSCORE",
+            "ZWELLTIMEDSHOTSCORE",
+        )
+    ),
 ]
 
 
@@ -134,8 +146,10 @@ def test_full_fixture_runs_clean(tmp_path):
         code, out = run(script, db, tmp_path)
         if code != ExitCode.OK:
             failures.append(f"{script}: exit {code}")
-        elif degraded := json.loads(out).get("degraded"):
-            failures.append(f"{script}: degraded {degraded}")
+        elif "degraded" not in (result := json.loads(out)):
+            failures.append(f"{script}: JSON result has no 'degraded' field")
+        elif result["degraded"]:
+            failures.append(f"{script}: degraded {result['degraded']}")
     assert not failures, failures
 
 
@@ -172,9 +186,13 @@ def test_dropping_a_column_never_crashes(table, column, tmp_path):
         if code != ExitCode.OK:
             problems.append(f"{script}: exit {code} (declare it required, or degrade)")
             continue
+        result = json.loads(out)
+        if "degraded" not in result:
+            problems.append(f"{script}: JSON result has no 'degraded' field")
+            continue
         sections = [s for s, names in module.OPTIONAL_COLUMNS.items() if dropped in physical(names)]
         if sections:
-            reported = {entry["section"] for entry in json.loads(out).get("degraded", [])}
+            reported = {entry["section"] for entry in result["degraded"]}
             problems.extend(f"{script}: section {s!r} not reported as degraded" for s in sections if s not in reported)
     assert not problems, f"dropping {dropped}:\n" + "\n".join(problems)
 
@@ -195,3 +213,26 @@ def test_export_album_filter_finds_a_renumbered_junction_table(tmp_path):
 
     plan = smart_export.generate_export_plan(db_path=str(db), album_name=title, organize_by="album")
     assert plan["summary"]["total_photos"] > 0
+
+
+def test_timeline_narrative_warns_about_degraded_sections(tmp_path):
+    """--narrative bypasses JSON, so the warning must be in the text too."""
+    db = db_without(tmp_path, "ZPERSON", "ZFULLNAME")
+    with patch.object(sys, "argv", ["timeline_recap", "--db-path", str(db), "--narrative"]):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            import timeline_recap
+
+            assert timeline_recap.main() == ExitCode.OK
+    assert "Not fully available" in out.getvalue()
+    assert "people: missing column(s): ZPERSON.ZFULLNAME" in out.getvalue()
+
+
+def test_missing_catalog_face_count_is_null_not_zero(tmp_path):
+    import people_analyzer
+
+    db = db_without(tmp_path, "ZPERSON", "ZFACECOUNT")
+    result = people_analyzer.analyze_people(db_path=str(db), min_photos=1)
+    assert result["people"], "fixture should yield people"
+    assert all(person["face_count"] is None for person in result["people"])
+    assert "catalog_face_count" in {entry["section"] for entry in result["degraded"]}

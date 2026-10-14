@@ -247,6 +247,8 @@ def get_cleanup_candidates(
         total_size = sum(c["size"] for c in candidates)
 
         return {
+            # Categories never degrade (missing columns refuse with exit 5), so this stays empty.
+            "degraded": [],
             "candidates": candidates,
             "summary": {
                 "category": category,
@@ -599,6 +601,7 @@ Categories:
             dry_run=False,
             batch_size=args.batch_size,
         )
+        result["degraded"] = data["degraded"]
         result["confirm_token"] = token
         if args.human:
             print(format_summary(result))

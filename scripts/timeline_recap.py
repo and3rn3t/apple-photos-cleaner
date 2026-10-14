@@ -15,6 +15,7 @@ from _common import (
     coredata_to_local,
     detect_face_schema,
     format_date_range,
+    format_degraded,
     handle_cli_error,
     has_timezone_offset,
     local_datetime_sql,
@@ -380,7 +381,7 @@ Examples:
         )
 
         if args.narrative:
-            output_text = format_narrative(timeline)
+            output_text = format_narrative(timeline) + format_degraded(timeline)
             if args.output:
                 with open(args.output, "w") as f:
                     f.write(output_text)
@@ -391,7 +392,7 @@ Examples:
             output_json(timeline, args.output)
 
             if not args.output:
-                print("\n" + format_narrative(timeline), file=sys.stderr)
+                print("\n" + (format_narrative(timeline) + format_degraded(timeline)), file=sys.stderr)
 
         return 0
 

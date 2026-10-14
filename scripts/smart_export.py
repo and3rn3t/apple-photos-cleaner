@@ -218,6 +218,8 @@ def generate_export_plan(
                 "person_name": person_name,
                 "album_name": album_name,
             },
+            # Filters never degrade (they refuse with exit 5), so this stays empty.
+            "degraded": [],
             "folders": {},
             "summary": {
                 "total_photos": total_count,
@@ -505,6 +507,7 @@ match the current plan, or nothing is written.
         if args.format == "json":
             output_json(
                 {
+                    "degraded": plan["degraded"],
                     "output_dir": args.output_dir,
                     "exported": total_exported,
                     "skipped": total_skipped,

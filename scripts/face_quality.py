@@ -36,6 +36,8 @@ OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
     "blur": ("face.blur",),
     "smile": ("face.smile",),
     "catalog_face_count": ("ZPERSON.ZFACECOUNT",),
+    # compute_face_score() falls back to neutral values for these when absent
+    "face_score": ("ZDETECTEDFACE.ZSIZE", "ZDETECTEDFACE.ZYAWANGLE", "ZDETECTEDFACE.ZFACEISINCENTER"),
 }
 
 
@@ -106,6 +108,7 @@ def analyze_face_quality(
         has_blur = degraded.check("blur", *OPTIONAL_COLUMNS["blur"])
         has_smile = degraded.check("smile", *OPTIONAL_COLUMNS["smile"])
         degraded.check("catalog_face_count", *OPTIONAL_COLUMNS["catalog_face_count"])
+        degraded.check("face_score", *OPTIONAL_COLUMNS["face_score"])
         if not has_faces:
             return {
                 "degraded": degraded.entries,

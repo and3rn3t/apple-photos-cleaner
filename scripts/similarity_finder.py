@@ -37,9 +37,29 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     "ZASSET.ZWIDTH",
     *FILE_SIZE,
 )
-# Individual feature scores are read with .get(); absent ones count as 0.
+# The similarity vector. A missing feature counts as 0, which shifts cosine scores, so it is declared.
+FEATURE_COLUMNS: tuple[str, ...] = (
+    "ZPLEASANTCOMPOSITIONSCORE",
+    "ZPLEASANTLIGHTINGSCORE",
+    "ZPLEASANTPATTERNSCORE",
+    "ZFAILURESCORE",
+    "ZNOISESCORE",
+    "ZPLEASANTSYMMETRYSCORE",
+    "ZPLEASANTCOLORHUESCORE",
+    "ZPLEASANTWALLPAPERSCORE",
+    "ZHARMONIOUSCOLORSCORE",
+    "ZIMMERSIVENESSSCORE",
+    "ZINTERACTIONSCORE",
+    "ZPLEASANTPERSPECTIVESCORE",
+    "ZPLEASANTSHARPSCORE",
+    "ZPLEASANTPOSTPROCESSINGSCORE",
+    "ZTASTEFULLYBLURREDSCORE",
+    "ZWELLFRAMEDSUBJECTSCORE",
+    "ZWELLTIMEDSHOTSCORE",
+)
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
     "similarity": ("ZCOMPUTEDASSETATTRIBUTES.ZASSET", "computed.composition"),
+    "similarity_features": tuple(f"ZCOMPUTEDASSETATTRIBUTES.{c}" for c in FEATURE_COLUMNS),
 }
 
 
@@ -60,26 +80,7 @@ def _extract_features(row: dict) -> list[float]:
     Uses quality-related scores and scene classification data that
     Apple Photos computes for every image.
     """
-    feature_keys = [
-        "ZPLEASANTCOMPOSITIONSCORE",
-        "ZPLEASANTLIGHTINGSCORE",
-        "ZPLEASANTPATTERNSCORE",
-        "ZFAILURESCORE",
-        "ZNOISESCORE",
-        "ZPLEASANTSYMMETRYSCORE",
-        "ZPLEASANTCOLORHUESCORE",
-        "ZPLEASANTWALLPAPERSCORE",
-        "ZHARMONIOUSCOLORSCORE",
-        "ZIMMERSIVENESSSCORE",
-        "ZINTERACTIONSCORE",
-        "ZPLEASANTPERSPECTIVESCORE",
-        "ZPLEASANTSHARPSCORE",
-        "ZPLEASANTPOSTPROCESSINGSCORE",
-        "ZTASTEFULLYBLURREDSCORE",
-        "ZWELLFRAMEDSUBJECTSCORE",
-        "ZWELLTIMEDSHOTSCORE",
-    ]
-    return [_safe_float(row.get(key)) for key in feature_keys]
+    return [_safe_float(row.get(key)) for key in FEATURE_COLUMNS]
 
 
 def find_similar_photos(
@@ -106,7 +107,9 @@ def find_similar_photos(
 
         # Check available columns
         degraded = Degradation(get_schema(conn))
-        if not degraded.check("similarity", *OPTIONAL_COLUMNS["similarity"]):
+        has_similarity = degraded.check("similarity", *OPTIONAL_COLUMNS["similarity"])
+        degraded.check("similarity_features", *OPTIONAL_COLUMNS["similarity_features"])
+        if not has_similarity:
             return {
                 "degraded": degraded.entries,
                 "error": "Computed asset attributes not available in this database version.",

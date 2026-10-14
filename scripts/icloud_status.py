@@ -32,9 +32,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
     "icloud": ("asset.cloud_local_state",),
     "ownership": ("asset.cloud_is_my_asset",),
-    "publish_dates": ("asset.cloud_batch_publish_date",),
     "downloadable": ("asset.cloud_is_downloadable",),
-    "visibility": ("asset.visibility_state",),
 }
 
 # iCloud local state values
@@ -64,9 +62,7 @@ def analyze_icloud_status(
         degraded = Degradation(get_schema(conn))
         has_cloud_state = degraded.check("icloud", *OPTIONAL_COLUMNS["icloud"])
         has_cloud_asset = degraded.check("ownership", *OPTIONAL_COLUMNS["ownership"])
-        has_cloud_date = degraded.check("publish_dates", *OPTIONAL_COLUMNS["publish_dates"])
         has_downloadable = degraded.check("downloadable", *OPTIONAL_COLUMNS["downloadable"])
-        has_visible = degraded.check("visibility", *OPTIONAL_COLUMNS["visibility"])
 
         if not has_cloud_state:
             return {
@@ -93,12 +89,8 @@ def analyze_icloud_status(
         ]
         if has_cloud_asset:
             select_cols.append("a.ZCLOUDISMYASSET")
-        if has_cloud_date:
-            select_cols.append("a.ZCLOUDBATCHPUBLISHDATE")
         if has_downloadable:
             select_cols.append("a.ZCLOUDISDOWNLOADABLE")
-        if has_visible:
-            select_cols.append("a.ZVISIBILITYSTATE")
 
         query = f"""
             SELECT {", ".join(select_cols)}

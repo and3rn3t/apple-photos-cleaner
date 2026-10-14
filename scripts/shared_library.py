@@ -32,7 +32,6 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
     "shared_library": ("asset.library_scope",),
     "contributors": ("asset.shared_library_scope_id",),
-    "participation": ("asset.library_scope_participation",),
 }
 
 
@@ -53,7 +52,6 @@ def analyze_shared_library(
         degraded = Degradation(get_schema(conn))
         has_scope = degraded.check("shared_library", *OPTIONAL_COLUMNS["shared_library"])
         has_shared_id = degraded.check("contributors", *OPTIONAL_COLUMNS["contributors"])
-        has_active = degraded.check("participation", *OPTIONAL_COLUMNS["participation"])
 
         if not has_scope:
             return {
@@ -82,8 +80,6 @@ def analyze_shared_library(
         ]
         if has_shared_id:
             select_cols.append("a.ZSHAREDLIBRARYSCOPEIDENTIFIER")
-        if has_active:
-            select_cols.append("a.ZACTIVELIBRARYSCOPEPARTICIPATIONSTATE")
 
         query = f"""
             SELECT {", ".join(select_cols)}

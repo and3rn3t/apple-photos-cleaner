@@ -41,12 +41,9 @@ LOGICAL_COLUMNS: dict[str, tuple[str, tuple[str, ...]]] = {
     "asset.playback_style": ("ZASSET", ("ZPLAYBACKSTYLE",)),
     "asset.library_scope": ("ZASSET", ("ZLIBRARYSCOPE",)),
     "asset.shared_library_scope_id": ("ZASSET", ("ZSHAREDLIBRARYSCOPEIDENTIFIER",)),
-    "asset.library_scope_participation": ("ZASSET", ("ZACTIVELIBRARYSCOPEPARTICIPATIONSTATE",)),
     "asset.cloud_local_state": ("ZASSET", ("ZCLOUDLOCALSTATE",)),
     "asset.cloud_is_my_asset": ("ZASSET", ("ZCLOUDISMYASSET",)),
-    "asset.cloud_batch_publish_date": ("ZASSET", ("ZCLOUDBATCHPUBLISHDATE",)),
     "asset.cloud_is_downloadable": ("ZASSET", ("ZCLOUDISDOWNLOADABLE",)),
-    "asset.visibility_state": ("ZASSET", ("ZVISIBILITYSTATE",)),
     # ZADDITIONALASSETATTRIBUTES
     "asset_attrs.tz_offset": ("ZADDITIONALASSETATTRIBUTES", ("ZTIMEZONEOFFSET",)),
     # ZCOMPUTEDASSETATTRIBUTES

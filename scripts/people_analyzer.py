@@ -95,7 +95,8 @@ def analyze_people(
                 {
                     "person_id": row["person_id"],
                     "name": row["name"],
-                    "face_count": row["face_count"] or 0,
+                    # None when this library has no catalog face count (see "degraded")
+                    "face_count": row["face_count"],
                     "photo_count": row["photo_count"],
                 }
             )
