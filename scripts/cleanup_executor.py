@@ -483,7 +483,7 @@ Examples:
   %(prog)s --category burst_leftovers --human
 
   # Move exactly the previewed screenshots to trash, using the token the preview printed
-  %(prog)s --category old_screenshots --execute --confirm 3f9a1c0d2b7e4a65
+  %(prog)s --category old_screenshots --execute --confirm <token>
 
 Categories:
   old_screenshots   - Screenshots older than --screenshot-age days

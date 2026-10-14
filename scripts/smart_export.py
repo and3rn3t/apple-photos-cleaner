@@ -380,7 +380,7 @@ Examples:
   %(prog)s --output-dir ~/Pictures/Export --album "Vacation 2025" --organize-by album
 
   # Run the export the plan describes, using the token the plan printed
-  %(prog)s --output-dir ~/Pictures/Export --favorites --confirm 3f9a1c0d2b7e4a65
+  %(prog)s --output-dir ~/Pictures/Export --favorites --confirm <token>
 
 Note: Actual export requires Photos.app and proper permissions.
 Export writes copies into --output-dir; it never alters the library. Without
