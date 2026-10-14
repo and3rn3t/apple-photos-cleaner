@@ -94,7 +94,7 @@ make clean       # Remove cache/build artifacts
 ### Project structure
 
 ```
-scripts/          # All analysis scripts + shared _common.py
+scripts/          # All analysis scripts + shared _common.py and _schema.py (schema registry)
 tests/            # Pytest test suite
 references/       # Database schema documentation
 SKILL.md          # AI skill definition (trigger words, workflows, tips)

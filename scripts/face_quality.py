@@ -19,6 +19,7 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
+from _schema import get_schema
 
 
 def compute_face_score(row: dict) -> float:
@@ -82,8 +83,8 @@ def analyze_face_quality(
         tz_available = has_timezone_offset(cursor)
 
         # Check for face detection tables
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ZDETECTEDFACE'")
-        if not cursor.fetchone():
+        schema = get_schema(conn)
+        if not schema.has_table("ZDETECTEDFACE"):
             return {
                 "error": "Face detection table not found in this database.",
                 "people": [],
@@ -91,11 +92,9 @@ def analyze_face_quality(
             }
 
         # Check available columns in ZDETECTEDFACE
-        cursor.execute("PRAGMA table_info(ZDETECTEDFACE)")
-        face_cols = {row["name"] for row in cursor.fetchall()}
-        has_quality = "ZQUALITYMEASURE" in face_cols
-        has_blur = "ZBLURSCORE" in face_cols
-        has_smile = "ZSMILESCORE" in face_cols
+        has_quality = schema.has("face.quality")
+        has_blur = schema.has("face.blur")
+        has_smile = schema.has("face.smile")
 
         if not has_quality:
             return {
@@ -130,7 +129,7 @@ def analyze_face_quality(
             "ZCONFIDENCE": "df.ZCONFIDENCE",
         }
         for col, expr in optional_cols.items():
-            if col in face_cols:
+            if schema.has_column("ZDETECTEDFACE", col):
                 select_cols.append(expr)
 
         where = [

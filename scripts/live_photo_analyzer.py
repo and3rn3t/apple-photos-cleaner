@@ -19,6 +19,7 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
+from _schema import get_schema
 
 # Live Photo sub-kinds
 LIVE_PHOTO_SUBTYPE = 2
@@ -51,10 +52,9 @@ def analyze_live_photos(
         tz_available = has_timezone_offset(cursor)
 
         # Check which columns exist
-        cursor.execute("PRAGMA table_info(ZASSET)")
-        columns = {row["name"] for row in cursor.fetchall()}
-        has_subtype = "ZKINDSUBTYPE" in columns
-        has_playback = "ZPLAYBACKSTYLE" in columns
+        schema = get_schema(conn)
+        has_subtype = schema.has("asset.kind_subtype")
+        has_playback = schema.has("asset.playback_style")
 
         if not has_subtype and not has_playback:
             return {

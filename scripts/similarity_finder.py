@@ -22,6 +22,7 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
+from _schema import get_schema
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -86,9 +87,7 @@ def find_similar_photos(
         tz_available = has_timezone_offset(cursor)
 
         # Check available columns
-        cursor.execute("PRAGMA table_info(ZCOMPUTEDASSETATTRIBUTES)")
-        ca_columns = {row["name"] for row in cursor.fetchall()}
-        has_composition = "ZPLEASANTCOMPOSITIONSCORE" in ca_columns
+        has_composition = get_schema(conn).has("computed.composition")
 
         if not has_composition:
             return {
