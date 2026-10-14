@@ -72,6 +72,13 @@ SCENES: tuple[str, ...] = ("ZSCENECLASSIFICATION.ZASSET", "ZSCENECLASSIFICATION.
 BURSTS: tuple[str, ...] = ("ZASSET.ZAVALANCHEKIND", "ZASSET.ZAVALANCHEPICKTYPE")
 FILE_SIZE: tuple[str, ...] = ("ZADDITIONALASSETATTRIBUTES.ZASSET", "ZADDITIONALASSETATTRIBUTES.ZORIGINALFILESIZE")
 
+
+def _virtual_module(sql: str) -> str:
+    """The module of a ``CREATE VIRTUAL TABLE … USING module(…)`` statement, e.g. ``rtree``."""
+    match = re.search(r"\bUSING\s+(\w+)", sql, re.IGNORECASE)
+    return match[1].lower() if match else "unknown"
+
+
 _PHYSICAL = re.compile(r"(Z\w*)\.(Z\w+)")
 
 
@@ -90,8 +97,13 @@ class SchemaRegistry:
 
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
-        rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").fetchall()
+        rows = conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name").fetchall()
         self._tables: tuple[str, ...] = tuple(row[0] for row in rows)
+        # Virtual tables (Photos keeps an R*Tree, Z_RT_Asset_boundedByRect) are never connected to:
+        # connecting prepares the module's own INSERTs, which the read-only authorizer refuses.
+        self._virtual: dict[str, str] = {
+            row[0]: _virtual_module(row[1]) for row in rows if (row[1] or "").upper().startswith("CREATE VIRTUAL TABLE")
+        }
         self._columns: dict[str, frozenset[str]] = {}
 
     def tables(self) -> tuple[str, ...]:
@@ -101,10 +113,13 @@ class SchemaRegistry:
     def has_table(self, table: str) -> bool:
         return table in self._tables
 
+    def is_virtual(self, table: str) -> bool:
+        return table in self._virtual
+
     def columns(self, table: str) -> frozenset[str]:
-        """Column names of *table*; empty if the table doesn't exist."""
+        """Column names of *table*; empty if the table doesn't exist or is virtual."""
         if table not in self._columns:
-            if not self.has_table(table):
+            if not self.has_table(table) or self.is_virtual(table):
                 return frozenset()
             quoted = '"' + table.replace('"', '""') + '"'
             rows = self._conn.execute(f"PRAGMA table_info({quoted})").fetchall()
@@ -124,7 +139,8 @@ class SchemaRegistry:
         Only names are hashed, never rows, so it is safe to share in an issue.
         """
         names = sorted(
-            f"{table}.{column}" for table in self._tables if table.startswith("Z") for column in self.columns(table)
+            [f"{table}.{column}" for table in self._tables if table.startswith("Z") for column in self.columns(table)]
+            + [f"{table}.<virtual:{module}>" for table, module in self._virtual.items() if table.startswith("Z")]
         )
         return hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()
 

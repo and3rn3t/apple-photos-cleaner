@@ -27,6 +27,9 @@ def library(tmp_path) -> Path:
     (bundle / "database").mkdir(parents=True)
     target = sqlite3.connect(bundle / "database" / "Photos.sqlite")
     create_full_test_db().backup(target)
+    # Like a real library (found on macOS 26): a spatial R*Tree the guard must never be asked to open.
+    target.execute("CREATE VIRTUAL TABLE Z_RT_Asset_boundedByRect USING rtree(Z_PK, ZMINX, ZMAXX, ZMINY, ZMAXY)")
+    target.commit()
     target.close()
     (bundle / "originals" / "A").mkdir(parents=True)
     return bundle
@@ -65,6 +68,7 @@ class TestChecks:
         assert report["ok"]
         checks = report["by_name"]
         assert [checks[n]["status"] for n in ("python", "library", "read_access", "library_size")] == ["ok"] * 4
+        assert checks["schema"]["status"] == "warn"  # unknown, but diagnosed: not a "not authorized" failure
         assert checks["automation"]["status"] == "skip"
         assert report["library"]["assets"] > 0
         assert report["degraded"] == []
