@@ -153,12 +153,62 @@ _READ_ACTIONS = frozenset(
 _READ_ONLY_PRAGMAS = frozenset({"table_info", "table_xinfo"})
 
 
+# Authorizer action codes by name, so a denial can say what was attempted (see --verbose).
+_ACTION_NAMES = {
+    getattr(sqlite3, name): name
+    for name in (
+        "SQLITE_CREATE_INDEX",
+        "SQLITE_CREATE_TABLE",
+        "SQLITE_CREATE_TEMP_INDEX",
+        "SQLITE_CREATE_TEMP_TABLE",
+        "SQLITE_CREATE_TEMP_TRIGGER",
+        "SQLITE_CREATE_TEMP_VIEW",
+        "SQLITE_CREATE_TRIGGER",
+        "SQLITE_CREATE_VIEW",
+        "SQLITE_DELETE",
+        "SQLITE_DROP_INDEX",
+        "SQLITE_DROP_TABLE",
+        "SQLITE_DROP_TEMP_INDEX",
+        "SQLITE_DROP_TEMP_TABLE",
+        "SQLITE_DROP_TEMP_TRIGGER",
+        "SQLITE_DROP_TEMP_VIEW",
+        "SQLITE_DROP_TRIGGER",
+        "SQLITE_DROP_VIEW",
+        "SQLITE_INSERT",
+        "SQLITE_PRAGMA",
+        "SQLITE_READ",
+        "SQLITE_SELECT",
+        "SQLITE_TRANSACTION",
+        "SQLITE_UPDATE",
+        "SQLITE_ATTACH",
+        "SQLITE_DETACH",
+        "SQLITE_ALTER_TABLE",
+        "SQLITE_REINDEX",
+        "SQLITE_ANALYZE",
+        "SQLITE_CREATE_VTABLE",
+        "SQLITE_DROP_VTABLE",
+        "SQLITE_FUNCTION",
+        "SQLITE_SAVEPOINT",
+        "SQLITE_RECURSIVE",
+    )
+    if hasattr(sqlite3, name)
+}
+
+
 def _deny_writes(action: int, arg1: str | None, arg2: str | None, db_name: str | None, trigger: str | None) -> int:
     """SQLite authorizer allowing only reads; every other statement fails to prepare."""
     if action in _READ_ACTIONS:
         return sqlite3.SQLITE_OK
     if action == sqlite3.SQLITE_PRAGMA and arg1 in _READ_ONLY_PRAGMAS:
         return sqlite3.SQLITE_OK
+    logger.debug(
+        "read-only guard denied %s (arg1=%r, arg2=%r, db=%r, trigger=%r)",
+        _ACTION_NAMES.get(action, action),
+        arg1,
+        arg2,
+        db_name,
+        trigger,
+    )
     return sqlite3.SQLITE_DENY
 
 

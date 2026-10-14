@@ -10,6 +10,7 @@ that input meets an interpreter: AppleScript, the filesystem, and SQL.
 
 import io
 import json
+import logging
 import os
 import shlex
 import shutil
@@ -287,6 +288,14 @@ class TestReadOnlyGuard:
         with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
             conn.execute(sql)
         conn.close()
+
+    def test_denials_are_logged_for_diagnosis(self, db_file, caplog):
+        """`--verbose` must name what the guard refused, so a false denial on a real library is debuggable."""
+        conn = connect_db(str(db_file))
+        with caplog.at_level(logging.DEBUG, logger="apple_photos_cleaner"), pytest.raises(sqlite3.DatabaseError):
+            conn.execute("INSERT INTO ZASSET (Z_PK) VALUES (999)")
+        conn.close()
+        assert "read-only guard denied SQLITE_INSERT (arg1='ZASSET'" in caplog.text
 
     @pytest.mark.parametrize("sql", WRITES[:4])
     def test_authorizer_denies_even_without_read_only_mode(self, db_file, sql):

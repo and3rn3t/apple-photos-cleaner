@@ -268,3 +268,16 @@ def test_doctor_imports_bootstrap_before_any_project_module():
     source = Path(doctor.__file__).read_text(encoding="utf-8")
     project_imports = [line for line in source.splitlines() if line.startswith(("import _", "from _"))]
     assert project_imports[0] == "import _bootstrap"
+
+
+def test_a_database_error_fails_one_check_not_the_report(library):
+    """A denial or query error in one check must not take down the whole diagnosis."""
+    with patch("doctor.library_stats", side_effect=sqlite3.OperationalError("not authorized")):
+        code, report = report_for("--library", str(library))
+    size = report["by_name"]["library_size"]
+    assert size["status"] == "fail"
+    assert "not authorized" in size["detail"]
+    assert "--verbose" in size["fix"]
+    assert report["by_name"]["schema"]["status"] != "fail"
+    assert [c["name"] for c in report["checks"]] == list(doctor.CHECK_NAMES)
+    assert code == ExitCode.ERROR
