@@ -20,7 +20,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
-from _schema import PhotosConnection, SchemaUnsupportedError, get_schema
+from _schema import PhotosConnection, SchemaRegistry, SchemaUnsupportedError, get_schema
 
 logger = logging.getLogger("apple_photos_cleaner")
 
@@ -410,14 +410,25 @@ def detect_face_schema(cursor: sqlite3.Cursor) -> dict[str, str]:
 class PhotosDB:
     """Context manager for Photos database connection."""
 
-    def __init__(self, db_path: str | None = None, library_path: str | None = None):
+    def __init__(
+        self,
+        db_path: str | None = None,
+        library_path: str | None = None,
+        require: tuple[str, ...] = (),
+        operation: str = "This command",
+    ):
         """
         Initialize database connection.
 
         Args:
             db_path: Direct path to Photos.sqlite
             library_path: Path to Photos library (will append /database/Photos.sqlite)
+            require: Columns the caller cannot run without (a script's REQUIRED_COLUMNS);
+                checked on open, raising SchemaUnsupportedError (exit code 5)
+            operation: Name used in that error message
         """
+        self.require = require
+        self.operation = operation
         # Scripts pass `args.db_path or args.library`, so a library bundle can arrive as db_path.
         if db_path and os.path.isdir(db_path):
             self.db_path = os.path.join(db_path, "database", "Photos.sqlite")
@@ -433,6 +444,12 @@ class PhotosDB:
     def __enter__(self) -> sqlite3.Connection:
         """Open connection."""
         self.conn = connect_db(self.db_path)
+        if self.require:
+            try:
+                get_schema(self.conn).require(*self.require, operation=self.operation)
+            except SchemaUnsupportedError:
+                self.conn.close()
+                raise
         return self.conn
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -440,6 +457,56 @@ class PhotosDB:
         if self.conn:
             with contextlib.suppress(sqlite3.ProgrammingError):
                 self.conn.close()
+
+
+# Computed quality scores build_asset_query(join_computed=True) selects.
+COMPUTED_SCORE_COLUMNS = (
+    "ZFAILURESCORE",
+    "ZNOISESCORE",
+    "ZPLEASANTCOMPOSITIONSCORE",
+    "ZPLEASANTLIGHTINGSCORE",
+    "ZPLEASANTPATTERNSCORE",
+    "ZPLEASANTPERSPECTIVESCORE",
+    "ZPLEASANTPOSTPROCESSINGSCORE",
+    "ZPLEASANTREFLECTIONSSCORE",
+    "ZPLEASANTSYMMETRYSCORE",
+)
+
+
+def computed_scores_sql(schema: SchemaRegistry, *columns: str, asset_alias: str = "a") -> tuple[list[str], str]:
+    """SELECT terms and LEFT JOIN for ZCOMPUTEDASSETATTRIBUTES scores, degrading to NULL.
+
+    Scores this library lacks are selected as ``NULL AS <column>``. Without the
+    ``ZASSET`` join key every score is NULL and the join clause is empty.
+
+    Returns:
+        ``(terms, join)`` to splice into a query that aliases ZASSET as *asset_alias*.
+    """
+    if not schema.has("ZCOMPUTEDASSETATTRIBUTES.ZASSET"):
+        return [f"NULL AS {column}" for column in columns], ""
+    terms = [schema.select(f"ZCOMPUTEDASSETATTRIBUTES.{column}", "ca") for column in columns]
+    return terms, f"LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON {asset_alias}.Z_PK = ca.ZASSET"
+
+
+# The four scores get_quality_score() blends.
+QUALITY_SCORE_COLUMNS = ("ZPLEASANTCOMPOSITIONSCORE", "ZPLEASANTLIGHTINGSCORE", "ZFAILURESCORE", "ZNOISESCORE")
+
+
+def has_any_quality_score(schema: SchemaRegistry) -> bool:
+    """Whether get_quality_score() can produce anything on this library."""
+    return schema.has("ZCOMPUTEDASSETATTRIBUTES.ZASSET") and any(
+        schema.has(f"ZCOMPUTEDASSETATTRIBUTES.{column}") for column in QUALITY_SCORE_COLUMNS
+    )
+
+
+def format_degraded(result: dict) -> str:
+    """Human-readable note listing the sections a result could not fully compute, or ""."""
+    entries = result.get("degraded") or []
+    if not entries:
+        return ""
+    lines = ["", "⚠️  Not fully available on this library (older or newer Photos database):"]
+    lines.extend(f"   - {entry['section']}: {entry['reason']}" for entry in entries)
+    return "\n".join(lines)
 
 
 # Query builders
@@ -450,6 +517,7 @@ def build_asset_query(
     order_by: str | None = None,
     limit: int | None = None,
     tz_offset_available: bool = False,
+    schema: SchemaRegistry | None = None,
 ) -> str:
     """
     Build a query for ZASSET table with optional joins and filters.
@@ -462,10 +530,15 @@ def build_asset_query(
         limit: LIMIT value
         tz_offset_available: Schema has ZTIMEZONEOFFSET (see has_timezone_offset);
             with join_additional, selects it as `tz_offset` for coredata_to_local()
+        schema: When given, computed scores missing from this library come back as NULL
+            (and the join is skipped if ZCOMPUTEDASSETATTRIBUTES.ZASSET is gone)
 
     Returns:
         SQL query string
     """
+    # Without the join key nothing from ca can be selected; every score degrades to NULL.
+    computed_joinable = schema is None or schema.has("ZCOMPUTEDASSETATTRIBUTES.ZASSET")
+
     # Base select
     query = "SELECT a.*"
 
@@ -481,23 +554,23 @@ def build_asset_query(
         )
 
     if join_computed:
-        query += """,
-            ca.ZFAILURESCORE,
-            ca.ZNOISESCORE,
-            ca.ZPLEASANTCOMPOSITIONSCORE,
-            ca.ZPLEASANTLIGHTINGSCORE,
-            ca.ZPLEASANTPATTERNSCORE,
-            ca.ZPLEASANTPERSPECTIVESCORE,
-            ca.ZPLEASANTPOSTPROCESSINGSCORE,
-            ca.ZPLEASANTREFLECTIONSSCORE,
-            ca.ZPLEASANTSYMMETRYSCORE"""
+        # With a schema, scores this library lacks are selected as NULL (graceful degradation).
+        terms = [
+            f"NULL AS {column}"
+            if not computed_joinable
+            else schema.select(f"ZCOMPUTEDASSETATTRIBUTES.{column}", "ca")
+            if schema
+            else f"ca.{column}"
+            for column in COMPUTED_SCORE_COLUMNS
+        ]
+        query += ",\n            " + ",\n            ".join(terms)
 
     query += "\nFROM ZASSET a"
 
     if join_additional:
         query += "\nLEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET"
 
-    if join_computed:
+    if join_computed and computed_joinable:
         query += "\nLEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET"
 
     if where_clauses:
@@ -710,13 +783,16 @@ def run_script(
 
     try:
         result = analyze_fn(db_path, args)
+        if isinstance(result, dict):
+            result.setdefault("degraded", [])
 
+        human = format_fn(result) + (format_degraded(result) if isinstance(result, dict) else "")
         if args.human:
-            print(format_fn(result))
+            print(human)
         else:
             output_json(result, args.output)
             if not args.output:
-                print("\n" + format_fn(result), file=sys.stderr)
+                print("\n" + human, file=sys.stderr)
 
         return ExitCode.OK
 

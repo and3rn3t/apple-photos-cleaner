@@ -19,7 +19,24 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
-from _schema import get_schema
+from _schema import FACES, FILE_SIZE, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZHEIGHT",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZASSET.ZWIDTH",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "faces": (*FACES, "face.quality"),
+    "blur": ("face.blur",),
+    "smile": ("face.smile",),
+    "catalog_face_count": ("ZPERSON.ZFACECOUNT",),
+}
 
 
 def compute_face_score(row: dict) -> float:
@@ -78,39 +95,36 @@ def analyze_face_quality(
     Returns:
         Face quality analysis per person
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Face quality scoring") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check for face detection tables
         schema = get_schema(conn)
-        if not schema.has_table("ZDETECTEDFACE"):
+        degraded = Degradation(schema)
+        has_faces = degraded.check("faces", *OPTIONAL_COLUMNS["faces"])
+        has_blur = degraded.check("blur", *OPTIONAL_COLUMNS["blur"])
+        has_smile = degraded.check("smile", *OPTIONAL_COLUMNS["smile"])
+        degraded.check("catalog_face_count", *OPTIONAL_COLUMNS["catalog_face_count"])
+        if not has_faces:
             return {
-                "error": "Face detection table not found in this database.",
+                "degraded": degraded.entries,
+                "error": "Face detection or face quality data not found in this database version.",
                 "people": [],
                 "summary": {"total_people": 0, "total_faces": 0},
             }
 
-        # Check available columns in ZDETECTEDFACE
-        has_quality = schema.has("face.quality")
-        has_blur = schema.has("face.blur")
-        has_smile = schema.has("face.smile")
-
-        if not has_quality:
-            return {
-                "error": "Face quality columns not found in this database version.",
-                "people": [],
-                "summary": {"total_people": 0, "total_faces": 0},
-            }
+        # macOS 15 renamed these foreign keys; the registry picks whichever exists.
+        person_fk = schema.col("face.person_fk")
+        asset_fk = schema.col("face.asset_fk")
 
         # Build face query
         select_cols = [
-            "df.Z_PK as face_pk",
-            "df.ZASSET",
-            "df.ZPERSON",
+            f"df.{asset_fk} AS ZASSET",
+            f"df.{person_fk} AS ZPERSON",
             "df.ZQUALITYMEASURE",
             "p.ZFULLNAME",
-            "p.ZFACECOUNT",
+            schema.select("ZPERSON.ZFACECOUNT", "p"),
             "a.ZFILENAME",
             "a.ZDATECREATED",
             "a.ZFAVORITE",
@@ -145,8 +159,8 @@ def analyze_face_quality(
         query = f"""
             SELECT {", ".join(select_cols)}
             FROM ZDETECTEDFACE df
-            JOIN ZPERSON p ON df.ZPERSON = p.Z_PK
-            JOIN ZASSET a ON df.ZASSET = a.Z_PK
+            JOIN ZPERSON p ON df.{person_fk} = p.Z_PK
+            JOIN ZASSET a ON df.{asset_fk} = a.Z_PK
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
             WHERE {" AND ".join(where)}
             ORDER BY p.ZFULLNAME, df.ZQUALITYMEASURE DESC
@@ -215,6 +229,7 @@ def analyze_face_quality(
         all_scores = [f["face_score"] for pdata in people_data.values() for f in pdata["faces"]]
 
         return {
+            "degraded": degraded.entries,
             "people": people,
             "summary": {
                 "total_people": len(people),

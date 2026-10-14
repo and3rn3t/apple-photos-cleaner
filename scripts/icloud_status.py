@@ -18,7 +18,24 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
-from _schema import get_schema
+from _schema import FILE_SIZE, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "icloud": ("asset.cloud_local_state",),
+    "ownership": ("asset.cloud_is_my_asset",),
+    "publish_dates": ("asset.cloud_batch_publish_date",),
+    "downloadable": ("asset.cloud_is_downloadable",),
+    "visibility": ("asset.visibility_state",),
+}
 
 # iCloud local state values
 CLOUD_STATE_NOT_UPLOADED = 0
@@ -39,20 +56,21 @@ def analyze_icloud_status(
     Returns breakdown of sync states, storage impact, and
     assets that might have sync issues.
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="iCloud status") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check available columns
-        schema = get_schema(conn)
-        has_cloud_state = schema.has("asset.cloud_local_state")
-        has_cloud_asset = schema.has("asset.cloud_is_my_asset")
-        has_cloud_date = schema.has("asset.cloud_batch_publish_date")
-        has_downloadable = schema.has("asset.cloud_is_downloadable")
-        has_visible = schema.has("asset.visibility_state")
+        degraded = Degradation(get_schema(conn))
+        has_cloud_state = degraded.check("icloud", *OPTIONAL_COLUMNS["icloud"])
+        has_cloud_asset = degraded.check("ownership", *OPTIONAL_COLUMNS["ownership"])
+        has_cloud_date = degraded.check("publish_dates", *OPTIONAL_COLUMNS["publish_dates"])
+        has_downloadable = degraded.check("downloadable", *OPTIONAL_COLUMNS["downloadable"])
+        has_visible = degraded.check("visibility", *OPTIONAL_COLUMNS["visibility"])
 
         if not has_cloud_state:
             return {
+                "degraded": degraded.entries,
                 "error": "iCloud columns not found in this database version.",
                 "icloud_enabled": False,
                 "summary": {
@@ -164,6 +182,7 @@ def analyze_icloud_status(
         local_only_large.sort(key=lambda x: x["size"], reverse=True)
 
         return {
+            "degraded": degraded.entries,
             "icloud_enabled": synced_count > 0,
             "by_state": by_state,
             "by_kind": {

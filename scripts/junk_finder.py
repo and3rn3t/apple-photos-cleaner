@@ -14,10 +14,30 @@ from _common import (
     datetime_to_coredata,
     format_size,
     get_quality_score,
+    has_any_quality_score,
     has_timezone_offset,
     run_script,
     tz_offset_sql,
 )
+from _schema import BURSTS, FILE_SIZE, QUALITY_SCORES, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZISDETECTEDSCREENSHOT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+    "ZADDITIONALASSETATTRIBUTES.ZORIGINALWIDTH",
+    "ZADDITIONALASSETATTRIBUTES.ZORIGINALHEIGHT",
+)
+# A category whose columns are all missing is null; partial quality data is scored with what exists.
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "low_quality": QUALITY_SCORES,
+    "burst_leftovers": BURSTS,
+    "possible_duplicates": ("ZASSET.ZDUPLICATEASSETVISIBILITYSTATE",),
+}
 
 
 def find_junk(
@@ -38,11 +58,18 @@ def find_junk(
     Returns:
         Dictionary with junk categories
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Junk finder") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
+        schema = get_schema(conn)
+        degraded = Degradation(schema)
+        degraded.check("low_quality", *OPTIONAL_COLUMNS["low_quality"])
+        can_score = has_any_quality_score(schema)
+        has_bursts = degraded.check("burst_leftovers", *OPTIONAL_COLUMNS["burst_leftovers"])
+        has_duplicates = degraded.check("possible_duplicates", *OPTIONAL_COLUMNS["possible_duplicates"])
 
         results: dict[str, Any] = {
+            "degraded": degraded.entries,
             "screenshots": [],
             "old_screenshots": [],
             "low_quality": [],
@@ -90,6 +117,9 @@ def find_junk(
                 old_screenshot_size += size
 
         # 2. Low quality photos (not screenshots, not videos)
+        low_quality_size = 0
+        if not can_score:
+            results["low_quality"] = None
         query = build_asset_query(
             where_clauses=[
                 "a.ZTRASHEDSTATE != 1",
@@ -99,12 +129,10 @@ def find_junk(
             join_additional=True,
             tz_offset_available=tz_available,
             join_computed=True,
-            order_by="ca.ZFAILURESCORE DESC",
+            order_by="ZFAILURESCORE DESC",
+            schema=schema,
         )
-        cursor.execute(query)
-
-        low_quality_size = 0
-        for row in cursor.fetchall():
+        for row in cursor.execute(query).fetchall() if can_score else []:
             quality = get_quality_score(row)
             if quality is not None and quality < quality_threshold:
                 asset_id = row["Z_PK"]
@@ -128,7 +156,11 @@ def find_junk(
                 )
 
         # 3. Burst leftovers (non-picked burst photos)
-        cursor.execute(f"""
+        burst_size = 0
+        if not has_bursts:
+            results["burst_leftovers"] = None
+        burst_rows = (
+            cursor.execute(f"""
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
@@ -144,9 +176,11 @@ def find_junk(
             AND (a.ZAVALANCHEPICKTYPE IS NULL OR a.ZAVALANCHEPICKTYPE = 0)
             ORDER BY a.ZDATECREATED DESC
         """)
+            if has_bursts
+            else []
+        )
 
-        burst_size = 0
-        for row in cursor:
+        for row in burst_rows:
             asset_id = row["Z_PK"]
             filename = row["ZFILENAME"]
             created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
@@ -167,7 +201,9 @@ def find_junk(
 
         # 4. Possible duplicates (if enabled)
         duplicate_size = 0
-        if include_duplicates:
+        if include_duplicates and not has_duplicates:
+            results["possible_duplicates"] = None
+        elif include_duplicates:
             # Method 1: Use Apple's duplicate detection
             cursor.execute(f"""
                 SELECT
@@ -208,9 +244,10 @@ def find_junk(
         results["totals"] = {
             "screenshots": len(results["screenshots"]),
             "old_screenshots": len(results["old_screenshots"]),
-            "low_quality": len(results["low_quality"]),
-            "burst_leftovers": len(results["burst_leftovers"]),
-            "possible_duplicates": len(results["possible_duplicates"]),
+            # None when the category could not be computed on this library (see "degraded").
+            "low_quality": _count(results["low_quality"]),
+            "burst_leftovers": _count(results["burst_leftovers"]),
+            "possible_duplicates": _count(results["possible_duplicates"]),
         }
 
         # Estimated savings (conservative - assume we'd delete old screenshots + burst leftovers)
@@ -233,6 +270,10 @@ def find_junk(
         return results
 
 
+def _count(items: list | None) -> int | None:
+    return None if items is None else len(items)
+
+
 def format_summary(junk: dict[str, Any]) -> str:
     """Format junk findings as human-readable summary."""
     lines = []
@@ -248,13 +289,13 @@ def format_summary(junk: dict[str, Any]) -> str:
         if totals["old_screenshots"] > 0:
             lines.append(f"     └─ Old (>30 days): {totals['old_screenshots']:,}")
 
-    if totals["low_quality"] > 0:
+    if (totals["low_quality"] or 0) > 0:
         lines.append(f"  📉 Low Quality: {totals['low_quality']:,}")
 
-    if totals["burst_leftovers"] > 0:
+    if (totals["burst_leftovers"] or 0) > 0:
         lines.append(f"  📸 Burst Leftovers: {totals['burst_leftovers']:,}")
 
-    if totals["possible_duplicates"] > 0:
+    if (totals["possible_duplicates"] or 0) > 0:
         lines.append(f"  👥 Possible Duplicates: {totals['possible_duplicates']:,}")
 
     lines.append("")

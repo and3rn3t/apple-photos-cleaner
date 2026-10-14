@@ -22,7 +22,25 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
-from _schema import get_schema
+from _schema import FILE_SIZE, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZHEIGHT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZASSET.ZWIDTH",
+    *FILE_SIZE,
+)
+# Individual feature scores are read with .get(); absent ones count as 0.
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "similarity": ("ZCOMPUTEDASSETATTRIBUTES.ZASSET", "computed.composition"),
+}
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -82,15 +100,15 @@ def find_similar_photos(
     Returns:
         Similar photo groups and summary statistics
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Similarity detection") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check available columns
-        has_composition = get_schema(conn).has("computed.composition")
-
-        if not has_composition:
+        degraded = Degradation(get_schema(conn))
+        if not degraded.check("similarity", *OPTIONAL_COLUMNS["similarity"]):
             return {
+                "degraded": degraded.entries,
                 "error": "Computed asset attributes not available in this database version.",
                 "groups": [],
                 "summary": {"total_compared": 0, "groups_found": 0},
@@ -204,6 +222,7 @@ def find_similar_photos(
         total_extra_photos = sum(g["member_count"] - 1 for g in similar_groups)
 
         return {
+            "degraded": degraded.entries,
             "groups": similar_groups[:100],
             "summary": {
                 "total_compared": len(photos),

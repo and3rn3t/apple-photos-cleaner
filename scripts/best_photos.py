@@ -18,6 +18,34 @@ from _common import (
     run_script,
     validate_year,
 )
+from _schema import FILE_SIZE, QUALITY_SCORES, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZISDETECTEDSCREENSHOT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+    "ZADDITIONALASSETATTRIBUTES.ZORIGINALWIDTH",
+    "ZADDITIONALASSETATTRIBUTES.ZORIGINALHEIGHT",
+)
+# Ranking blends whichever quality scores exist; with none, nothing qualifies.
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "quality": QUALITY_SCORES,
+    "score_breakdown": tuple(
+        f"ZCOMPUTEDASSETATTRIBUTES.{c}"
+        for c in (
+            "ZPLEASANTPATTERNSCORE",
+            "ZPLEASANTPERSPECTIVESCORE",
+            "ZPLEASANTPOSTPROCESSINGSCORE",
+            "ZPLEASANTREFLECTIONSSCORE",
+            "ZPLEASANTSYMMETRYSCORE",
+        )
+    ),
+}
 
 
 def find_best_photos(
@@ -40,9 +68,13 @@ def find_best_photos(
     Returns:
         Dictionary with best photos and stats
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Best photos") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
+        schema = get_schema(conn)
+        degraded = Degradation(schema)
+        for section, names in OPTIONAL_COLUMNS.items():
+            degraded.check(section, *names)
 
         where_clauses = [
             "a.ZTRASHEDSTATE != 1",
@@ -64,6 +96,7 @@ def find_best_photos(
             join_additional=True,
             join_computed=True,
             tz_offset_available=tz_available,
+            schema=schema,
         )
         cursor.execute(query, params)
 
@@ -145,6 +178,7 @@ def find_best_photos(
         favorited_high_quality = sum(1 for p in scored_photos if p["is_favorite"])
 
         return {
+            "degraded": degraded.entries,
             "top_photos": top_photos,
             "summary": {
                 "total_with_scores": total_with_scores,

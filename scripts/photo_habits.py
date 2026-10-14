@@ -18,6 +18,18 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
+from _schema import FILE_SIZE
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZISDETECTEDSCREENSHOT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -36,7 +48,7 @@ def analyze_habits(
     Returns:
         Habits analysis dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Photo habits") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 

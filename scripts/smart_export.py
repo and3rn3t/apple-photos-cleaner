@@ -38,6 +38,25 @@ from _common import (
     setup_logging,
     tz_offset_sql,
 )
+from _schema import FACES, FILE_SIZE, SchemaUnsupportedError, album_junction, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    "asset.uuid",
+    *FILE_SIZE,
+)
+# Export writes files, so a filter it cannot apply exactly refuses (exit 5) rather than degrading.
+FILTER_COLUMNS: dict[str, tuple[str, ...]] = {
+    "person": FACES,
+    "album": ("ZGENERICALBUM.ZTITLE",),
+}
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
 
 # Counters reported back by the generated AppleScript.
 _RESULT_RE = re.compile(r"EXPORTED:(\d+)\s+SKIPPED:(\d+)")
@@ -67,10 +86,15 @@ def generate_export_plan(
     Returns:
         Export plan dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Export") as conn:
         cursor = conn.cursor()
         require_uuid_support(cursor, "Export")
-        schema = detect_face_schema(cursor)
+        face_schema = detect_face_schema(cursor)
+        registry = get_schema(conn)
+        if person_name:
+            registry.require(*FILTER_COLUMNS["person"], operation="Export --person")
+        if album_name:
+            registry.require(*FILTER_COLUMNS["album"], operation="Export --album")
         tz_available = has_timezone_offset(cursor)
         local_dt = local_datetime_sql(tz_available)
 
@@ -108,17 +132,24 @@ def generate_export_plan(
         # Add person filter if specified
         if person_name:
             query += f"""
-                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema["asset_fk"]}
-                JOIN ZPERSON p ON df.{schema["person_fk"]} = p.Z_PK
+                JOIN ZDETECTEDFACE df ON a.Z_PK = df.{face_schema["asset_fk"]}
+                JOIN ZPERSON p ON df.{face_schema["person_fk"]} = p.Z_PK
             """
             where_clauses.append("p.ZFULLNAME = ?")
             params.append(person_name)
 
         # Add album filter if specified
         if album_name:
-            query += """
-                JOIN Z_27ASSETS ga ON a.Z_PK = ga.Z_3ASSETS
-                JOIN ZGENERICALBUM album ON ga.Z_27ALBUMS = album.Z_PK
+            # The join table's name and columns are numbered per schema version (Z_27ASSETS, …).
+            junction = album_junction(registry)
+            if junction is None:
+                raise SchemaUnsupportedError(
+                    "No album membership table found in this Photos database; Export --album cannot run."
+                )
+            table, album_col, asset_col = junction
+            query += f"""
+                JOIN {table} ga ON a.Z_PK = ga.{asset_col}
+                JOIN ZGENERICALBUM album ON ga.{album_col} = album.Z_PK
             """
             where_clauses.append("album.ZTITLE = ?")
             params.append(album_name)

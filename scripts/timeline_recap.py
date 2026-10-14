@@ -22,6 +22,20 @@ from _common import (
     setup_logging,
     tz_offset_sql,
 )
+from _schema import FACES, SCENES, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZKIND",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZADDITIONALASSETATTRIBUTES.ZASSET",
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"people": FACES, "scenes": SCENES}
 
 
 def generate_timeline(
@@ -42,9 +56,12 @@ def generate_timeline(
     Returns:
         Timeline dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Timeline recap") as conn:
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
+        degraded = Degradation(get_schema(conn))
+        has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
+        has_scenes = degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
         tz_available = has_timezone_offset(cursor)
         local_dt = local_datetime_sql(tz_available)
 
@@ -100,6 +117,7 @@ def generate_timeline(
 
         if not photos:
             return {
+                "degraded": degraded.entries,
                 "timeline": [],
                 "summary": {
                     "total_photos": 0,
@@ -150,9 +168,10 @@ def generate_timeline(
             event["video_count"] = sum(1 for p in event["photos"] if p["kind"] == "video")
             event["favorites"] = sum(1 for p in event["photos"] if p["is_favorite"])
 
-            # Get people in this event
-            if photo_ids:
-                placeholders = ",".join("?" * len(photo_ids))
+            placeholders = ",".join("?" * len(photo_ids))
+
+            # Get people in this event (None when this library has no face data)
+            if photo_ids and has_faces:
                 cursor.execute(
                     f"""
                     SELECT DISTINCT p.ZFULLNAME, COUNT(df.{schema["asset_fk"]}) as count
@@ -167,10 +186,10 @@ def generate_timeline(
 
                 event["people"] = [{"name": row["ZFULLNAME"], "count": row["count"]} for row in cursor.fetchall()]
             else:
-                event["people"] = []
+                event["people"] = [] if has_faces else None
 
-            # Get scene classifications
-            if photo_ids:
+            # Get scene classifications (None when this library has none)
+            if photo_ids and has_scenes:
                 cursor.execute(
                     f"""
                     SELECT DISTINCT sc.ZSCENENAME, COUNT(*) as count
@@ -189,7 +208,7 @@ def generate_timeline(
                     if row["ZSCENENAME"]
                 ]
             else:
-                event["scenes"] = []
+                event["scenes"] = [] if has_scenes else None
 
             # Location summary
             locations = [(p["latitude"], p["longitude"]) for p in event["photos"] if p["latitude"] and p["longitude"]]
@@ -247,6 +266,7 @@ def generate_timeline(
         total_photos = sum(day["total_photos"] for day in timeline)
 
         return {
+            "degraded": degraded.entries,
             "timeline": timeline,
             "summary": {
                 "total_photos": total_photos,

@@ -16,6 +16,21 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
+from _schema import FILE_SIZE
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZISDETECTEDSCREENSHOT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZASSET.ZUNIFORMTYPEIDENTIFIER",
+    *FILE_SIZE,
+    "ZADDITIONALASSETATTRIBUTES.ZORIGINALWIDTH",
+    "ZADDITIONALASSETATTRIBUTES.ZORIGINALHEIGHT",
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
 
 
 def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
@@ -25,7 +40,7 @@ def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
     Returns:
         Storage analysis dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Storage analysis") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
         local_dt = local_datetime_sql(tz_available)

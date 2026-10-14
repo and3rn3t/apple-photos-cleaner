@@ -36,6 +36,26 @@ from _common import (
     setup_logging,
     tz_offset_sql,
 )
+from _schema import BURSTS, FILE_SIZE, QUALITY_SCORES, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZTRASHEDSTATE",
+    "asset.uuid",
+    *FILE_SIZE,
+)
+# A mutating command never acts on partial data: a category whose columns are missing
+# refuses (exit 5) instead of degrading.
+CATEGORY_COLUMNS: dict[str, tuple[str, ...]] = {
+    "old_screenshots": ("ZASSET.ZISDETECTEDSCREENSHOT",),
+    "all_screenshots": ("ZASSET.ZISDETECTEDSCREENSHOT",),
+    "burst_leftovers": BURSTS,
+    "low_quality": ("ZASSET.ZKIND", "ZASSET.ZISDETECTEDSCREENSHOT", *QUALITY_SCORES),
+    "duplicates": ("ZASSET.ZDUPLICATEASSETVISIBILITYSTATE", "ZASSET.ZFAVORITE"),
+}
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
 
 # Maximum items per AppleScript batch (Photos.app can be slow with large batches)
 MAX_BATCH_SIZE = 50
@@ -68,10 +88,12 @@ def get_cleanup_candidates(
     Returns:
         Cleanup candidates dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Cleanup") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
         require_uuid_support(cursor, "Cleanup")
+        schema = get_schema(conn)
+        schema.require(*CATEGORY_COLUMNS[category], operation=f"Cleanup category {category!r}")
 
         candidates = []
 
@@ -163,7 +185,8 @@ def get_cleanup_candidates(
                 join_additional=True,
                 tz_offset_available=tz_available,
                 join_computed=True,
-                order_by="ca.ZFAILURESCORE DESC",
+                order_by="ZFAILURESCORE DESC",
+                schema=schema,
                 limit=limit * 3,  # fetch more since we filter by quality
             )
             cursor.execute(query)

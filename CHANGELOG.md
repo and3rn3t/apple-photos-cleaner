@@ -46,6 +46,16 @@ release is cut.
 
 ### Changed
 
+- **Graceful degradation** (T1.4). Each script declares `REQUIRED_COLUMNS` and
+  `OPTIONAL_COLUMNS`. A missing required column is a clean exit 5 naming it,
+  instead of a raw "no such column" crash. A missing optional column (computed
+  quality scores, faces, scenes, bursts, Apple duplicate detection, iCloud /
+  Live Photo / Shared Library fields, …) leaves that one section `null` or
+  computed from what exists, and adds `{"section", "reason"}` to the new
+  `degraded` list in every JSON result. `--human` output ends with the same
+  note. `cleanup_executor` categories and `smart_export --person/--album`
+  refuse with exit 5 rather than act on partial data. A test drops every
+  fixture column in turn and runs every script against the result.
 - **Central schema registry** (T1.1). `scripts/_schema.py` is now the only code
   that inspects `Photos.sqlite`'s schema. It reads the table list once per
   connection and maps logical names (`face.person_fk`, `asset.uuid`, …) to
@@ -56,6 +66,13 @@ release is cut.
 
 ### Fixed
 
+- `smart_export --album` hardcoded the album join table as `Z_27ASSETS` /
+  `Z_3ASSETS`. Core Data renumbers it between macOS versions, so the filter
+  failed on most libraries. It is now found by shape, as `album_auditor`
+  already did.
+- `face_quality` joined faces on the pre-Sequoia `ZPERSON` / `ZASSET` columns,
+  which don't exist in the macOS 15 face schema (`ZPERSONFORFACE` /
+  `ZASSETFORFACE`). It now resolves them through the schema registry.
 - `--library <bundle>.photoslibrary` works. Every script handed the bundle
   directory to SQLite as if it were the database file, which failed with a
   "disk I/O error"; only `--db-path` worked.

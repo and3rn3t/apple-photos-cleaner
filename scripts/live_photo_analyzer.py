@@ -8,8 +8,10 @@ import sys
 from typing import Any
 
 from _common import (
+    QUALITY_SCORE_COLUMNS,
     PhotosDB,
     _safe_col,
+    computed_scores_sql,
     coredata_to_local,
     format_size,
     get_quality_score,
@@ -19,7 +21,23 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
-from _schema import get_schema
+from _schema import FILE_SIZE, QUALITY_SCORES, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZHEIGHT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZASSET.ZWIDTH",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "live_photos": ("asset.kind_subtype", "asset.playback_style"),
+    "quality": QUALITY_SCORES,
+}
 
 # Live Photo sub-kinds
 LIVE_PHOTO_SUBTYPE = 2
@@ -47,17 +65,21 @@ def analyze_live_photos(
     Returns breakdown of live vs still, storage comparison, and
     Live Photos that are rarely played (candidates for conversion).
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Live Photo analysis") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check which columns exist
         schema = get_schema(conn)
+        degraded = Degradation(schema)
+        degraded.check("live_photos", *OPTIONAL_COLUMNS["live_photos"])
+        degraded.check("quality", *OPTIONAL_COLUMNS["quality"])
         has_subtype = schema.has("asset.kind_subtype")
         has_playback = schema.has("asset.playback_style")
 
         if not has_subtype and not has_playback:
             return {
+                "degraded": degraded.entries,
                 "error": "Live Photo columns not found in this database version",
                 "live_photos": [],
                 "summary": {
@@ -91,14 +113,8 @@ def analyze_live_photos(
             select_cols.append("a.ZPLAYBACKSTYLE")
 
         # Include quality scores for identifying best live photos
-        select_cols.extend(
-            [
-                "ca.ZPLEASANTCOMPOSITIONSCORE",
-                "ca.ZPLEASANTLIGHTINGSCORE",
-                "ca.ZFAILURESCORE",
-                "ca.ZNOISESCORE",
-            ]
-        )
+        score_terms, score_join = computed_scores_sql(schema, *QUALITY_SCORE_COLUMNS)
+        select_cols.extend(score_terms)
 
         where = ["a.ZTRASHEDSTATE != 1", "a.ZKIND = 0"]  # photos only
         params: list = []
@@ -111,7 +127,7 @@ def analyze_live_photos(
             SELECT {", ".join(select_cols)}
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
-            LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
+            {score_join}
             WHERE {" AND ".join(where)}
             ORDER BY a.ZDATECREATED DESC
         """
@@ -177,6 +193,7 @@ def analyze_live_photos(
         conversion_candidates = [p for p in live_photos if not p["is_favorite"]]
 
         return {
+            "degraded": degraded.entries,
             "live_photos": live_photos[:200],
             "conversion_candidates": conversion_candidates[:100],
             "by_playback_style": by_playback,
