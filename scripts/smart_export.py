@@ -12,6 +12,7 @@ See export_with_applescript for the matching rules.
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import sys
 from collections import defaultdict
@@ -30,6 +31,8 @@ from _common import (
     handle_cli_error,
     has_timezone_offset,
     local_datetime_sql,
+    output_json,
+    plan_token,
     require_uuid_support,
     sanitize_folder_name,
     setup_logging,
@@ -303,6 +306,62 @@ return "EXPORTED:" & (exportedCount as text) & " SKIPPED:" & (skippedCount as te
         return 0, len(items)
 
 
+def export_params(args: argparse.Namespace) -> dict[str, Any]:
+    """The arguments that decide what is exported and where (hashed into the token)."""
+    return {
+        "organize_by": args.organize_by,
+        "favorites": args.favorites,
+        "start_date": args.start_date,
+        "end_date": args.end_date,
+        "person": args.person,
+        "album": args.album,
+        "output_dir": os.path.realpath(args.output_dir),
+    }
+
+
+def export_command(args: argparse.Namespace, token: str) -> str:
+    """The exact command line that performs this plan's export."""
+    # Interpreter + absolute script path: runnable as-is from any working directory.
+    argv = [sys.executable, os.path.abspath(__file__)]
+    if args.db_path:
+        argv += ["--db-path", args.db_path]
+    elif args.library:
+        argv += ["--library", args.library]
+    argv += ["--output-dir", args.output_dir, "--organize-by", args.organize_by]
+    if args.favorites:
+        argv.append("--favorites")
+    for flag in ("start_date", "end_date", "person", "album"):
+        value = getattr(args, flag)
+        if value is not None:
+            argv += [f"--{flag.replace('_', '-')}", value]
+    argv += ["--confirm", token]
+    return shlex.join(argv)
+
+
+def format_plan(plan: dict[str, Any]) -> str:
+    """Human-readable export plan, ending with the command that executes it."""
+    lines = [
+        "📤 EXPORT PLAN",
+        "=" * 50,
+        f"Organization: {plan['organize_by']}",
+        f"Total photos: {plan['summary']['total_photos']:,}",
+        f"Total size: {plan['summary']['total_size_formatted']}",
+        f"Folders: {plan['summary']['folder_count']}",
+        "",
+        "Folders:",
+    ]
+    for folder_name, folder_info in sorted(plan["folders"].items()):
+        lines.append(f"  {folder_name}/")
+        lines.append(f"    {folder_info['count']:,} items, {folder_info['size_formatted']}")
+    lines += [
+        "",
+        f"Confirmation token: {plan['confirm_token']}",
+        "To export exactly this plan, run:",
+        f"    {plan['next_command']}",
+    ]
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Smart export of Apple Photos",
@@ -321,9 +380,13 @@ Examples:
   # Export specific album
   %(prog)s --output-dir ~/Pictures/Export --album "Vacation 2025" --organize-by album
 
+  # Run the export the plan describes, using the token the plan printed
+  %(prog)s --output-dir ~/Pictures/Export --favorites --confirm <token>
+
 Note: Actual export requires Photos.app and proper permissions.
-Export writes copies into --output-dir; it never alters the library. When run
-interactively it asks for confirmation first — pass --yes to skip that.
+Export writes copies into --output-dir; it never alters the library. Without
+--confirm it only prints the plan and its token (exit code 11); --confirm must
+match the current plan, or nothing is written.
         """,
     )
     parser.add_argument("--db-path", help="Path to Photos.sqlite database")
@@ -341,12 +404,17 @@ interactively it asks for confirmation first — pass --yes to skip that.
     parser.add_argument("--person", help="Export only photos with this person")
     parser.add_argument("--album", help="Export only from this album")
     parser.add_argument("--plan-only", action="store_true", help="Show export plan without actually exporting")
-    parser.add_argument("--yes", action="store_true", help="Skip the interactive confirmation prompt")
+    parser.add_argument("--confirm", metavar="TOKEN", help="Confirmation token from the plan; required to export")
+    parser.add_argument(
+        "--format", choices=["human", "json"], default="human", help="Plan/result output format (default: human)"
+    )
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
 
     args = parser.parse_args()
     setup_logging(verbose=args.verbose)
+    if args.confirm and args.plan_only:
+        parser.error("--confirm and --plan-only are mutually exclusive")
 
     try:
         db_path = args.db_path or args.library
@@ -360,60 +428,60 @@ interactively it asks for confirmation first — pass --yes to skip that.
             person_name=args.person,
             album_name=args.album,
         )
+        uuids = [item["uuid"] for folder in plan["folders"].values() for item in folder["items"]]
+        token = plan_token("smart_export", export_params(args), uuids)
+        plan["confirm_token"] = token
+        plan["next_command"] = export_command(args, token)
 
-        # Show plan
-        print("📤 EXPORT PLAN")
-        print("=" * 50)
-        print(f"Organization: {plan['organize_by']}")
-        print(f"Total photos: {plan['summary']['total_photos']:,}")
-        print(f"Total size: {plan['summary']['total_size_formatted']}")
-        print(f"Folders: {plan['summary']['folder_count']}")
-        print()
+        if args.plan_only or args.confirm != token:
+            if args.format == "json":
+                output_json(plan)
+            else:
+                print(format_plan(plan))
+            if args.plan_only:
+                return ExitCode.OK
+            reason = "is stale: the plan changed since it was shown" if args.confirm else "is missing"
+            print(
+                f"Not exported: the confirmation token {reason}. Show the user the plan, "
+                f"then re-run with --confirm {token}",
+                file=sys.stderr,
+            )
+            return ExitCode.CONFIRMATION_REQUIRED
 
-        print("Folders:")
-        for folder_name, folder_info in sorted(plan["folders"].items()):
-            print(f"  {folder_name}/")
-            print(f"    {folder_info['count']:,} items, {folder_info['size_formatted']}")
-        print()
-
-        if args.plan_only:
-            print("(Plan only - no actual export performed)")
-            return 0
-
-        # Confirm before writing anything. Only prompt on a TTY so piped and
-        # scripted runs are unaffected; --yes covers an interactive opt-out.
-        if not args.yes and sys.stdin.isatty():
-            total = plan["summary"]["total_photos"]
-            print(f"About to export {total:,} photos to {args.output_dir}")
-            if input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
-                print("Cancelled.")
-                return ExitCode.USER_ABORTED
-            print()
-
-        # Perform export
-        print(f"Exporting to: {args.output_dir}")
-        print()
+        # Progress goes to stderr in JSON mode so stdout stays one JSON document.
+        progress = sys.stderr if args.format == "json" else sys.stdout
+        if args.format == "human":
+            print(format_plan(plan))
+        print(f"Exporting to: {args.output_dir}\n", file=progress)
 
         total_exported = 0
         total_skipped = 0
         for folder_name, folder_info in plan["folders"].items():
-            print(f"Exporting {folder_name}... ", end="", flush=True)
+            print(f"Exporting {folder_name}... ", end="", flush=True, file=progress)
 
             exported, skipped = export_with_applescript(folder_info["items"], args.output_dir, folder_name)
             total_exported += exported
             total_skipped += skipped
 
             if skipped:
-                print(f"✓ {exported:,} exported, {skipped:,} skipped")
+                print(f"✓ {exported:,} exported, {skipped:,} skipped", file=progress)
             else:
-                print(f"✓ {exported:,} exported")
+                print(f"✓ {exported:,} exported", file=progress)
 
-        print()
-        print(f"Export complete: {total_exported:,} exported, {total_skipped:,} skipped.")
+        print(f"\nExport complete: {total_exported:,} exported, {total_skipped:,} skipped.", file=progress)
         if total_skipped:
-            print("Skipped items could not be resolved in Photos, or their filename no longer matches.")
+            print("Skipped items could not be resolved in Photos, or their filename no longer matches.", file=progress)
+        if args.format == "json":
+            output_json(
+                {
+                    "output_dir": args.output_dir,
+                    "exported": total_exported,
+                    "skipped": total_skipped,
+                    "confirm_token": token,
+                }
+            )
 
-        return 0
+        return ExitCode.OK
 
     except KeyboardInterrupt:
         print("\nCancelled.", file=sys.stderr)

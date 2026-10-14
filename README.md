@@ -7,7 +7,7 @@ Goes beyond what Photos.app offers: intelligent junk detection, detailed storage
 > **Safety:** Analysis commands are read-only — they query the Photos database over a read-only
 > connection and never write back to it. Two commands are **mutating** and drive Photos.app through
 > AppleScript: `cleanup_executor.py` moves items to Recently Deleted (previews by default; needs
-> `--execute` plus a typed `yes`), and `smart_export.py` writes exported copies to a directory you
+> `--execute --confirm <token>` from that preview), and `smart_export.py` writes exported copies to a directory you
 > choose. See [Safety & Privacy](#safety--privacy).
 
 > **Privacy:** Reports can include recognized people's names, face data, GPS coordinates, and
@@ -120,8 +120,8 @@ Everything except the two commands below is **read-only**: the database is opene
 
 | Command | Effect | Gate |
 |---|---|---|
-| `cleanup_executor.py` | Moves items to **Recently Deleted** via Photos.app | Previews by default; needs `--execute` **and** a typed `yes`; capped by `--limit` (default 500) |
-| `smart_export.py` | Writes **exported copies** into `--output-dir` | Prompts before exporting; `--plan-only` to preview, `--yes` to skip the prompt |
+| `cleanup_executor.py` | Moves items to **Recently Deleted** via Photos.app | Previews by default; needs `--execute --confirm <token>` matching the preview; capped by `--limit` (default 500) |
+| `smart_export.py` | Writes **exported copies** into `--output-dir` | Prints the plan and a token; exports only with `--confirm <token>` matching that plan |
 
 Neither command alters originals. Cleanup is recoverable from Recently Deleted for 30 days;
 export only creates new files.

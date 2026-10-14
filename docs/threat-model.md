@@ -63,13 +63,12 @@ Covered by `TestAppleScriptEscaping`, including a real `osascript` round trip on
 
 | Threat | Mitigation | Where |
 | --- | --- | --- |
-| A mutation runs without the user seeing what it does | **Partial.** `cleanup_executor` previews by default and executes only with `--execute`. `smart_export` exports whenever `--plan-only` is absent, and its plan shows folder totals, not individual assets | `cleanup_executor`, `smart_export` |
-| An agent approves for the user (piping `yes`, passing `--yes`) | *Planned:* the preview emits a token hashed from the exact candidate set, and executing requires `--confirm <token>`. A changed set invalidates the token (T1.19) | `cleanup_executor`, `smart_export` |
-| A runaway deletion | **Partial.** `--limit` defaults to 500 but is caller-controlled, and before T1.19 a negative value reached SQLite as "no limit". Deleted items go to Recently Deleted, recoverable for 30 days. *Planned:* a hard per-run cap and a cool-down (T1.21) | `cleanup_executor` |
+| A mutation runs without the user seeing what it does | Both commands only preview unless given the preview's token: `cleanup_executor --execute --confirm <token>`, `smart_export --confirm <token>`. The JSON preview lists every asset; the human plan for `smart_export` shows folder totals | `cleanup_executor`, `smart_export` |
+| An agent approves for the user (piping `yes`, passing `--yes`) | The preview emits a token (`plan_token`) hashed from the exact asset UUIDs and selection options, and executing requires `--confirm <token>`. A changed set invalidates it (exit 11). There is no interactive prompt to satisfy (T1.19) | `cleanup_executor`, `smart_export`; `TestCleanupConfirmation`, `TestExportConfirmation` |
+| A runaway deletion | **Partial.** `--limit` defaults to 500 and must be a positive integer; a negative value used to reach SQLite as "no limit". It is still caller-controlled, so an agent can raise it, but the token then covers that larger set and the user sees its size. Deleted items go to Recently Deleted, recoverable for 30 days. *Planned:* a hard per-run cap and a cool-down (T1.21) | `cleanup_executor`; `TestCleanupConfirmation` |
 
-**Known gaps until T1.19 ships:** `cleanup_executor` confirms with `input()`, which a piped
-`yes` satisfies. `smart_export` skips its prompt when stdin is not a TTY, so it exports without
-any approval.
+A token proves the agent ran the preview, not that the user read it. SKILL.md tells agents to
+pass `--confirm` only after the user says yes. The token makes sure that what runs is what was shown.
 
 ### 5. Filesystem writes (`smart_export`)
 

@@ -6,6 +6,7 @@ All scripts use this module for consistent database access and data formatting.
 
 import argparse
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -518,6 +519,17 @@ def build_asset_query(
 # ── Security helpers ─────────────────────────────────────────────────────────
 
 
+def positive_int(value: str) -> int:
+    """argparse type for counts and limits. SQLite reads a negative LIMIT as "no limit"."""
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected a positive integer, got {value!r}") from None
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {number}")
+    return number
+
+
 def validate_year(year: str | None) -> str | None:
     """Validate that a year string is a 4-digit number.
 
@@ -602,6 +614,31 @@ def build_identifier_lists(items: list[dict]) -> tuple[str, str]:
     id_list = ", ".join(f'"{escape_applescript(item["uuid"] + LOCAL_IDENTIFIER_SUFFIX)}"' for item in items)
     name_list = ", ".join(f'"{escape_applescript(item["filename"] or "")}"' for item in items)
     return id_list, name_list
+
+
+def plan_token(command: str, params: dict[str, Any], uuids: list[str | None]) -> str:
+    """Fingerprint exactly what a mutating command is about to do.
+
+    The preview prints this token and execution requires it back via
+    ``--confirm``. Approval therefore covers one specific set of assets, and an
+    agent cannot approve a set it never showed the user. Any change to the
+    candidates or to the parameters that selected them produces a new token.
+
+    Args:
+        command: Script name, so tokens are never valid across commands.
+        params: Every argument that influences what gets selected or written.
+        uuids: Asset UUIDs in the plan; order does not matter.
+
+    Returns:
+        16 hex characters (64 bits of SHA-256).
+    """
+    payload = json.dumps(
+        {"command": command, "params": params, "uuids": sorted(u or "" for u in uuids)},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def sanitize_folder_name(name: str) -> str:
