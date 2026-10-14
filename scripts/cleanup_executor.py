@@ -18,13 +18,16 @@ from typing import Any
 
 from _common import (
     LOCAL_IDENTIFIER_SUFFIX,
+    ExitCode,
     PhotosDB,
     build_identifier_lists,
     coredata_to_local,
     format_size,
+    handle_cli_error,
     has_timezone_offset,
     output_json,
     require_uuid_support,
+    setup_logging,
     tz_offset_sql,
 )
 
@@ -480,9 +483,11 @@ Categories:
         help=f"Items per AppleScript batch (default: {MAX_BATCH_SIZE})",
     )
     parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
     parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
+    setup_logging(verbose=args.verbose)
 
     try:
         db_path = args.db_path or args.library
@@ -513,7 +518,7 @@ Categories:
             confirm = input("Type 'yes' to proceed: ").strip().lower()
             if confirm != "yes":
                 print("Cancelled.")
-                return 0
+                return ExitCode.USER_ABORTED
 
             result = execute_cleanup(
                 candidates=data["candidates"],
@@ -536,18 +541,11 @@ Categories:
 
         return 0
 
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
     except KeyboardInterrupt:
         print("\nCancelled.", file=sys.stderr)
-        return 1
+        return ExitCode.USER_ABORTED
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_cli_error(e)
 
 
 if __name__ == "__main__":

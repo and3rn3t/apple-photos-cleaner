@@ -20,16 +20,19 @@ from pathlib import Path
 from typing import Any
 
 from _common import (
+    ExitCode,
     PhotosDB,
     build_identifier_lists,
     coredata_to_local,
     detect_face_schema,
     escape_applescript,
     format_size,
+    handle_cli_error,
     has_timezone_offset,
     local_datetime_sql,
     require_uuid_support,
     sanitize_folder_name,
+    setup_logging,
     tz_offset_sql,
 )
 
@@ -340,7 +343,10 @@ interactively it asks for confirmation first — pass --yes to skip that.
     parser.add_argument("--plan-only", action="store_true", help="Show export plan without actually exporting")
     parser.add_argument("--yes", action="store_true", help="Skip the interactive confirmation prompt")
 
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
+
     args = parser.parse_args()
+    setup_logging(verbose=args.verbose)
 
     try:
         db_path = args.db_path or args.library
@@ -381,7 +387,7 @@ interactively it asks for confirmation first — pass --yes to skip that.
             print(f"About to export {total:,} photos to {args.output_dir}")
             if input("Continue? [y/N] ").strip().lower() not in ("y", "yes"):
                 print("Cancelled.")
-                return 0
+                return ExitCode.USER_ABORTED
             print()
 
         # Perform export
@@ -409,15 +415,11 @@ interactively it asks for confirmation first — pass --yes to skip that.
 
         return 0
 
-    except FileNotFoundError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    except KeyboardInterrupt:
+        print("\nCancelled.", file=sys.stderr)
+        return ExitCode.USER_ABORTED
     except Exception as e:
-        print(f"Error generating export plan: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_cli_error(e)
 
 
 if __name__ == "__main__":

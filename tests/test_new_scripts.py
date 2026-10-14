@@ -251,6 +251,10 @@ def create_full_test_db():
     cursor.execute("INSERT INTO ZDETECTEDFACE (ZASSETFORFACE, ZPERSONFORFACE) VALUES (9, 1)")
     cursor.execute("INSERT INTO ZSCENECLASSIFICATION VALUES (9, 'dog', 0.7)")
 
+    # Real libraries have a user-entered title here; added last so the positional
+    # INSERTs above stay valid. seasonal_highlights reads it.
+    cursor.execute("ALTER TABLE ZADDITIONALASSETATTRIBUTES ADD COLUMN ZTITLE TEXT")
+
     conn.commit()
     return conn
 
