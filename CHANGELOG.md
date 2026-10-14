@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 a removed or renamed one is a major. See [RELEASING.md](RELEASING.md) for how a
 release is cut.
 
+## [Unreleased]
+
+### Added
+
+- `docs/threat-model.md`, linked from SECURITY.md (T0.9). It lists trust boundaries, what we
+  protect, the mitigation for each threat with the code that enforces it, and the known gaps.
+- A deprecation policy in CONTRIBUTING.md (T0.16). Flags and JSON fields get one minor release
+  of warnings, and removal only in a major release. Safety fixes are the only exception.
+
 ## [1.0.3] - 2026-10-13
 
 Hygiene patch: roadmap items T0.1–T0.6, T0.8, T0.12 and T0.13.
@@ -92,6 +101,7 @@ repository, so its exact contents aren't recorded. It sits between 1.0.0 and
   preview-first.
 - Schema detection for the old and new (`ZPERSONFORFACE`/`ZASSETFORFACE`) face tables.
 
+[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.0.3...HEAD
 <!-- No tags existed before 1.0.3; versions are anchored on commits. -->
 [1.0.3]: https://github.com/and3rn3t/apple-photos-cleaner/compare/05552f3...v1.0.3
 [1.0.2]: https://github.com/and3rn3t/apple-photos-cleaner/compare/cf2f97e...05552f3

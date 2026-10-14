@@ -32,6 +32,26 @@ ruff check . && ruff format --check . && mypy && pytest
 - The floor rises when a version reaches end-of-life. A floor change is called out in the CHANGELOG
   and moves `requires-python`, ruff's `target-version`, and the CI matrix together.
 
+### Deprecation policy
+
+Agents depend on the CLI flags and JSON output, so breaking them silently is a bug.
+
+- A flag or JSON field gets **at least one minor release of warnings** before it is removed or
+  renamed, and the removal itself ships in a **major** release (see [RELEASING.md](RELEASING.md)).
+  For example, deprecated in 1.2 and removed in 2.0 at the earliest.
+- During that release the old form keeps working. Using it adds an entry to the result's
+  `warnings` list (`{"code": "deprecated", "message": "...", "replacement": "..."}`) and logs
+  to stderr. JSON stdout stays parseable.
+- The deprecation and the removal each get a CHANGELOG entry, under **Deprecated** and
+  **Removed** respectively.
+
+**Exception: safety fixes.** If the old behavior lets something be deleted or written without
+the user's informed approval, it can be removed immediately, with no warning period, and in
+whatever release the fix lands in, including a minor or patch release. Waiting for a major would
+leave the hole open. Call it out under a **Breaking (safety)** heading in the CHANGELOG, saying
+what replaces it. See
+[docs/threat-model.md](docs/threat-model.md).
+
 ## Branch Naming
 
 Use the format `type/short-description`:
