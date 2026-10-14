@@ -469,6 +469,28 @@ class TestCleanupConfirmation:
         assert code == ExitCode.CONFIRMATION_REQUIRED
         osascript.assert_not_called()
 
+    def test_token_is_stale_once_the_library_changes(self, cli, capsys, db_file):
+        """A new screenshot arriving between preview and execute must not ride along."""
+        module, argv = cli
+        token = self.preview_token(cli, capsys)
+
+        writer = sqlite3.connect(db_file)
+        writer.executescript("""
+            CREATE TEMP TABLE new_asset AS SELECT * FROM ZASSET WHERE ZISDETECTEDSCREENSHOT = 1 LIMIT 1;
+            UPDATE new_asset SET Z_PK = Z_PK + 1000, ZUUID = 'ARRIVED-AFTER-PREVIEW';
+            INSERT INTO ZASSET SELECT * FROM new_asset;
+        """)
+        writer.commit()
+        writer.close()
+
+        with patch("cleanup_executor.subprocess.run") as osascript:
+            code, out = run_main(module, [*argv, "--execute", "--confirm", token], capsys)
+        assert code == ExitCode.CONFIRMATION_REQUIRED
+        osascript.assert_not_called()
+        refreshed = json.loads(out)
+        assert refreshed["confirm_token"] != token
+        assert "ARRIVED-AFTER-PREVIEW" in {c["uuid"] for c in refreshed["candidates"]}
+
     def test_piped_yes_is_not_a_confirmation(self, cli, capsys, monkeypatch):
         module, argv = cli
         monkeypatch.setattr("sys.stdin", io.StringIO("yes\n"))

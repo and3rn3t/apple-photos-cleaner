@@ -8,11 +8,14 @@ own `--help` (which exits before touching any database), so this needs no
 refactoring of the scripts and stays true to what users actually run.
 """
 
+import argparse
+import importlib
 import re
 import subprocess
 import sys
 from functools import cache
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -97,3 +100,67 @@ def test_extractor_finds_documented_usage():
     flags = documented_script_flags("SKILL.md")
     assert len(flags) > 40
     assert ("cleanup_executor", "--execute") in {(s, f) for _, s, f in flags}
+
+
+# ── Documented defaults ──────────────────────────────────────────────────────
+
+SECTION = re.compile(r"^### \d+\. ")
+OPTION_DEFAULT = re.compile(r"^- `(--[a-z][a-z0-9-]*)[^`]*` — .*?\(default: ([^,)]+)")
+
+
+class _ParserCapturedError(Exception):
+    def __init__(self, parser: argparse.ArgumentParser):
+        self.parser = parser
+
+
+@cache
+def cli_defaults(script: str) -> dict[str, object]:
+    """Each long option's real default, read from the parser main() builds (stops before parsing)."""
+    module = importlib.import_module(script)
+
+    def capture(parser, *args, **kwargs):
+        raise _ParserCapturedError(parser)
+
+    with patch.object(argparse.ArgumentParser, "parse_args", capture), pytest.raises(_ParserCapturedError) as caught:
+        module.main()
+    return {
+        option: action.default
+        for action in caught.value.parser._actions
+        for option in action.option_strings
+        if option.startswith("--")
+    }
+
+
+def documented_defaults() -> list[tuple[int, str, str, str]]:
+    """(line, script, flag, documented default) from SKILL.md's per-command option lists."""
+    found, script = [], None
+    for lineno, line in enumerate((REPO_ROOT / "SKILL.md").read_text(encoding="utf-8").splitlines(), start=1):
+        if SECTION.match(line):
+            script = None
+        elif script is None and (ref := SCRIPT_REF.search(line)):
+            script = ref[1]
+        if script and (match := OPTION_DEFAULT.match(line)):
+            found.append((lineno, script, match[1], match[2].strip()))
+    return found
+
+
+def same_default(documented: str, actual: object) -> bool:
+    if isinstance(actual, bool) or actual is None:
+        return False
+    if isinstance(actual, (int, float)):
+        try:
+            return float(documented) == float(actual)
+        except ValueError:
+            return False
+    return documented == str(actual)
+
+
+def test_documented_defaults_match_argparse():
+    documented = documented_defaults()
+    assert len(documented) >= 20, "default extraction found too little; the parser above is broken"
+    wrong = [
+        f"SKILL.md:{lineno}: {script}.py {flag} documented {doc!r}, actual {cli_defaults(script).get(flag)!r}"
+        for lineno, script, flag, doc in documented
+        if not same_default(doc, cli_defaults(script).get(flag))
+    ]
+    assert not wrong, "Documented defaults that don't match the code:\n" + "\n".join(wrong)
