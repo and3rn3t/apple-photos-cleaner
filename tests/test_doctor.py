@@ -127,7 +127,13 @@ class TestSchemaIdentification:
 
     @pytest.mark.parametrize(
         ("version", "macos"),
-        [(16210, "macOS 13 Ventura"), (17120, "macOS 14 Sonoma"), (18000, "macOS 15 Sequoia"), (99999, None)],
+        [
+            (16210, "macOS 13 Ventura"),
+            (17120, "macOS 14 Sonoma"),
+            (18000, "macOS 15 Sequoia"),
+            (19607, "macOS 26 Tahoe"),  # observed on a real macOS 26.7.2 library
+            (99999, None),
+        ],
     )
     def test_model_version_ranges(self, version, macos):
         assert macos_for_model_version(version) == macos
@@ -168,9 +174,12 @@ class TestSchemaIdentification:
 
     def test_shipped_fingerprints_file_is_valid(self):
         data = json.loads(doctor.FINGERPRINTS_PATH.read_text(encoding="utf-8"))
+        assert data["fingerprints"], "at least one verified fingerprint ships"
         for fingerprint, entry in data["fingerprints"].items():
             assert len(fingerprint) == 64 and int(fingerprint, 16) >= 0
             assert entry["macos"].startswith("macOS ")
+            # The recorded model version must agree with the range table.
+            assert macos_for_model_version(entry["model_version"]) == entry["macos"]
 
 
 class TestSchemaDump:

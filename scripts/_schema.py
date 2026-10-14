@@ -201,6 +201,7 @@ MODEL_VERSION_RANGES: tuple[tuple[int, int, str], ...] = (
     (16000, 16999, "macOS 13 Ventura"),
     (17000, 17999, "macOS 14 Sonoma"),
     (18000, 18999, "macOS 15 Sequoia"),
+    (19000, 19999, "macOS 26 Tahoe"),  # verified: model 19607 on macOS 26.7.2
 )
 # Oldest release the scripts are tested against.
 OLDEST_SUPPORTED_MODEL_VERSION = 16000
