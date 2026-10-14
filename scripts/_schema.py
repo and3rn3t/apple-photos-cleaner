@@ -11,10 +11,21 @@ When Apple renames a column, add the new name to the front of its candidate
 tuple in LOGICAL_COLUMNS. Code that builds SQL with ``schema.col(...)`` follows
 automatically.
 
+Every name the registry accepts is either a logical name from LOGICAL_COLUMNS or
+a physical ``"ZTABLE.ZCOLUMN"`` reference (graceful degradation, T1.4). Scripts
+declare what they need:
+
+- ``REQUIRED_COLUMNS``: the command cannot run without these. Pass them to
+  ``PhotosDB(..., require=REQUIRED_COLUMNS)``; a missing one is exit code 5.
+- ``OPTIONAL_COLUMNS``: ``{section: names}``. When any is missing, the script
+  still runs, that section is computed without it (or is ``null``), and the
+  result's ``degraded`` list says why (see Degradation).
+
 Use ``PRAGMA table_info(...)`` here, never the ``pragma_table_info()``
 table-valued function: older SQLite trips the read-only authorizer on it.
 """
 
+import re
 import sqlite3
 
 
@@ -30,12 +41,9 @@ LOGICAL_COLUMNS: dict[str, tuple[str, tuple[str, ...]]] = {
     "asset.playback_style": ("ZASSET", ("ZPLAYBACKSTYLE",)),
     "asset.library_scope": ("ZASSET", ("ZLIBRARYSCOPE",)),
     "asset.shared_library_scope_id": ("ZASSET", ("ZSHAREDLIBRARYSCOPEIDENTIFIER",)),
-    "asset.library_scope_participation": ("ZASSET", ("ZACTIVELIBRARYSCOPEPARTICIPATIONSTATE",)),
     "asset.cloud_local_state": ("ZASSET", ("ZCLOUDLOCALSTATE",)),
     "asset.cloud_is_my_asset": ("ZASSET", ("ZCLOUDISMYASSET",)),
-    "asset.cloud_batch_publish_date": ("ZASSET", ("ZCLOUDBATCHPUBLISHDATE",)),
     "asset.cloud_is_downloadable": ("ZASSET", ("ZCLOUDISDOWNLOADABLE",)),
-    "asset.visibility_state": ("ZASSET", ("ZVISIBILITYSTATE",)),
     # ZADDITIONALASSETATTRIBUTES
     "asset_attrs.tz_offset": ("ZADDITIONALASSETATTRIBUTES", ("ZTIMEZONEOFFSET",)),
     # ZCOMPUTEDASSETATTRIBUTES
@@ -47,6 +55,32 @@ LOGICAL_COLUMNS: dict[str, tuple[str, tuple[str, ...]]] = {
     "face.blur": ("ZDETECTEDFACE", ("ZBLURSCORE",)),
     "face.smile": ("ZDETECTEDFACE", ("ZSMILESCORE",)),
 }
+
+
+# Column groups scripts compose their contracts from.
+QUALITY_SCORES: tuple[str, ...] = (
+    "ZCOMPUTEDASSETATTRIBUTES.ZASSET",
+    "ZCOMPUTEDASSETATTRIBUTES.ZFAILURESCORE",
+    "ZCOMPUTEDASSETATTRIBUTES.ZNOISESCORE",
+    "ZCOMPUTEDASSETATTRIBUTES.ZPLEASANTCOMPOSITIONSCORE",
+    "ZCOMPUTEDASSETATTRIBUTES.ZPLEASANTLIGHTINGSCORE",
+)
+FACES: tuple[str, ...] = ("face.person_fk", "face.asset_fk", "ZPERSON.ZFULLNAME")
+SCENES: tuple[str, ...] = ("ZSCENECLASSIFICATION.ZASSET", "ZSCENECLASSIFICATION.ZSCENENAME")
+BURSTS: tuple[str, ...] = ("ZASSET.ZAVALANCHEKIND", "ZASSET.ZAVALANCHEPICKTYPE")
+FILE_SIZE: tuple[str, ...] = ("ZADDITIONALASSETATTRIBUTES.ZASSET", "ZADDITIONALASSETATTRIBUTES.ZORIGINALFILESIZE")
+
+_PHYSICAL = re.compile(r"(Z\w*)\.(Z\w+)")
+
+
+def resolve(name: str) -> tuple[str, tuple[str, ...]]:
+    """(table, candidate columns) for a logical name or a physical "ZTABLE.ZCOLUMN"."""
+    if name in LOGICAL_COLUMNS:
+        return LOGICAL_COLUMNS[name]
+    match = _PHYSICAL.fullmatch(name)
+    if match:
+        return match[1], (match[2],)
+    raise KeyError(f"unknown schema name {name!r}: not in LOGICAL_COLUMNS and not ZTABLE.ZCOLUMN")
 
 
 class SchemaRegistry:
@@ -78,24 +112,85 @@ class SchemaRegistry:
     def has_column(self, table: str, column: str) -> bool:
         return column in self.columns(table)
 
-    def col(self, logical: str) -> str | None:
-        """The physical column for a logical name, or None if this library has none of its candidates."""
-        table, candidates = LOGICAL_COLUMNS[logical]
+    def col(self, name: str) -> str | None:
+        """The physical column for *name*, or None if this library has none of its candidates."""
+        table, candidates = resolve(name)
         present = self.columns(table)
-        return next((name for name in candidates if name in present), None)
+        return next((column for column in candidates if column in present), None)
 
-    def has(self, logical: str) -> bool:
-        return self.col(logical) is not None
+    def has(self, name: str) -> bool:
+        return self.col(name) is not None
 
-    def require(self, *logical: str, operation: str) -> None:
-        """Raise SchemaUnsupportedError naming every missing logical column."""
-        missing = [name for name in logical if not self.has(name)]
+    def missing(self, *names: str) -> list[str]:
+        """Human-readable "ZTABLE.ZCOLUMN" for each of *names* this library lacks."""
+        return [describe(name) for name in names if not self.has(name)]
+
+    def select(self, name: str, alias: str, as_: str | None = None) -> str:
+        """SELECT-list term for an optional column: ``alias.COL``, or ``NULL AS COL`` when it is missing.
+
+        *as_* names the result column either way (default: the column's own name).
+        """
+        column = self.col(name)
+        if column is not None:
+            return f"{alias}.{column}" + (f" AS {as_}" if as_ else "")
+        return f"NULL AS {as_ or resolve(name)[1][0]}"
+
+    def require(self, *names: str, operation: str) -> None:
+        """Raise SchemaUnsupportedError naming every missing column."""
+        missing = self.missing(*names)
         if missing:
-            physical = ", ".join(f"{LOGICAL_COLUMNS[name][0]}.{'/'.join(LOGICAL_COLUMNS[name][1])}" for name in missing)
             raise SchemaUnsupportedError(
-                f"{physical} not found in this Photos database. {operation} cannot run without it. "
+                f"{', '.join(missing)} not found in this Photos database. {operation} cannot run without it. "
                 "Please open an issue with your macOS version."
             )
+
+
+def describe(name: str) -> str:
+    table, candidates = resolve(name)
+    return f"{table}.{'/'.join(candidates)}"
+
+
+class Degradation:
+    """Collects the ``degraded`` entries a result reports for optional columns it had to do without."""
+
+    def __init__(self, schema: SchemaRegistry):
+        self._schema = schema
+        self._missing: dict[str, list[str]] = {}
+
+    def check(self, section: str, *names: str) -> bool:
+        """True when every column is present; otherwise record *section* as degraded and return False."""
+        missing = self._schema.missing(*names)
+        if missing:
+            recorded = self._missing.setdefault(section, [])
+            recorded.extend(column for column in missing if column not in recorded)
+        return not missing
+
+    @property
+    def entries(self) -> list[dict[str, str]]:
+        return [
+            {"section": section, "reason": f"missing column(s): {', '.join(columns)}"}
+            for section, columns in self._missing.items()
+        ]
+
+
+def album_junction(schema: SchemaRegistry) -> tuple[str, str, str] | None:
+    """(table, album column, asset column) of the album↔asset join table, or None.
+
+    Core Data numbers it per schema version (Z_26ASSETS, Z_27ASSETS, Z_28ASSETS, …),
+    so it is found by shape rather than by name.
+    """
+    for table in schema.tables():
+        if not (table.startswith("Z_") and "ASSETS" in table.upper()):
+            continue
+        album_col = asset_col = None
+        for column in sorted(schema.columns(table)):
+            if "ALBUMS" in column.upper():
+                album_col = column
+            elif "ASSETS" in column.upper():
+                asset_col = column
+        if album_col and asset_col:
+            return table, album_col, asset_col
+    return None
 
 
 class PhotosConnection(sqlite3.Connection):

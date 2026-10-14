@@ -20,6 +20,20 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
+from _schema import FACES, FILE_SIZE, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZKIND",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"people": FACES}
 
 # ---------------------------------------------------------------------------
 # Offline reverse geocoding: maps lat/lon to approximate place names using
@@ -232,9 +246,11 @@ def analyze_locations(
     Returns:
         Location analysis dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Location mapping") as conn:
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
+        degraded = Degradation(get_schema(conn))
+        has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
         tz_available = has_timezone_offset(cursor)
 
         where_clauses = [
@@ -331,8 +347,9 @@ def analyze_locations(
 
             # Get people at this location
             photo_ids = [p["id"] for p in cluster_photos]
-            people_at_location = []
-            if photo_ids:
+            # None (not []) when this library has no face data to ask
+            people_at_location: list[dict[str, Any]] | None = [] if has_faces else None
+            if photo_ids and has_faces:
                 placeholders = ",".join("?" * len(photo_ids))
                 cursor.execute(
                     f"""
@@ -375,6 +392,7 @@ def analyze_locations(
         trips = [loc for loc in locations if loc["is_trip"]]
 
         return {
+            "degraded": degraded.entries,
             "locations": locations,
             "trips": trips,
             "summary": {

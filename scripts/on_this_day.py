@@ -10,7 +10,9 @@ from datetime import date, datetime
 from typing import Any
 
 from _common import (
+    QUALITY_SCORE_COLUMNS,
     PhotosDB,
+    computed_scores_sql,
     coredata_to_local,
     detect_face_schema,
     format_size,
@@ -20,6 +22,25 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
+from _schema import FACES, FILE_SIZE, QUALITY_SCORES, SCENES, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZISDETECTEDSCREENSHOT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "quality": QUALITY_SCORES,
+    "people": FACES,
+    "scenes": SCENES,
+}
 
 
 def on_this_day(
@@ -46,9 +67,15 @@ def on_this_day(
     month = target.month
     day = target.day
 
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="On This Day") as conn:
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
+        registry = get_schema(conn)
+        degraded = Degradation(registry)
+        degraded.check("quality", *OPTIONAL_COLUMNS["quality"])
+        has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
+        has_scenes = degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
+        score_terms, score_join = computed_scores_sql(registry, *QUALITY_SCORE_COLUMNS)
         tz_available = has_timezone_offset(cursor)
         local_dt = local_datetime_sql(tz_available)
 
@@ -89,14 +116,11 @@ def on_this_day(
                 a.ZLONGITUDE,
                 a.ZISDETECTEDSCREENSHOT,
                 aa.ZORIGINALFILESIZE,
-                ca.ZFAILURESCORE,
-                ca.ZNOISESCORE,
-                ca.ZPLEASANTCOMPOSITIONSCORE,
-                ca.ZPLEASANTLIGHTINGSCORE,
+                {", ".join(score_terms)},
                 {tz_offset_sql(tz_available)} AS tz_offset
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
-            LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
+            {score_join}
             WHERE a.ZTRASHEDSTATE != 1
             AND {date_filter}
             AND strftime('%Y', {local_dt}) != ?
@@ -145,10 +169,11 @@ def on_this_day(
             photo_ids = [p["id"] for p in photos]
             years_ago = current_year - int(year_str)
 
-            # Get people
-            people = []
-            if photo_ids:
-                placeholders = ",".join("?" * len(photo_ids))
+            placeholders = ",".join("?" * len(photo_ids))
+
+            # Get people (None when this library has no face data)
+            people: list[dict[str, Any]] | None = [] if has_faces else None
+            if photo_ids and has_faces:
                 cursor.execute(
                     f"""
                     SELECT DISTINCT p.ZFULLNAME, COUNT(df.{schema["asset_fk"]}) as count
@@ -164,9 +189,9 @@ def on_this_day(
                 )
                 people = [{"name": row["ZFULLNAME"], "count": row["count"]} for row in cursor.fetchall()]
 
-            # Get scenes
-            scenes = []
-            if photo_ids:
+            # Get scenes (None when this library has no scene data)
+            scenes: list[dict[str, Any]] | None = [] if has_scenes else None
+            if photo_ids and has_scenes:
                 cursor.execute(
                     f"""
                     SELECT sc.ZSCENENAME, COUNT(*) as count
@@ -218,6 +243,7 @@ def on_this_day(
         year_summaries.sort(key=lambda x: x["years_ago"])
 
         return {
+            "degraded": degraded.entries,
             "target_date": target.isoformat(),
             "target_month_day": f"{target.strftime('%B')} {target.day}",
             "window_days": window_days,

@@ -8,7 +8,9 @@ from datetime import datetime
 from typing import Any
 
 from _common import (
+    QUALITY_SCORE_COLUMNS,
     PhotosDB,
+    computed_scores_sql,
     detect_face_schema,
     format_date_range,
     format_size,
@@ -18,6 +20,25 @@ from _common import (
     local_datetime_sql,
     run_script,
 )
+from _schema import FACES, FILE_SIZE, QUALITY_SCORES, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZHIDDEN",
+    "ZASSET.ZISDETECTEDSCREENSHOT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "top_people": FACES,
+    "quality_distribution": QUALITY_SCORES,
+    "bursts": ("ZASSET.ZAVALANCHEKIND",),
+}
 
 
 def analyze_library(db_path: str | None = None) -> dict[str, Any]:
@@ -27,8 +48,14 @@ def analyze_library(db_path: str | None = None) -> dict[str, Any]:
     Returns:
         Dictionary with analysis results
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Library analysis") as conn:
         cursor = conn.cursor()
+
+        registry = get_schema(conn)
+        degraded = Degradation(registry)
+        has_faces = degraded.check("top_people", *OPTIONAL_COLUMNS["top_people"])
+        degraded.check("quality_distribution", *OPTIONAL_COLUMNS["quality_distribution"])
+        has_bursts = degraded.check("bursts", *OPTIONAL_COLUMNS["bursts"])
 
         # Basic counts
         cursor.execute("""
@@ -132,7 +159,8 @@ def analyze_library(db_path: str | None = None) -> dict[str, Any]:
 
         # People stats - detect schema for face table
         schema = detect_face_schema(cursor)
-        cursor.execute(f"""
+        people_rows = (
+            cursor.execute(f"""
             SELECT
                 p.ZFULLNAME,
                 COUNT(DISTINCT df.{schema["asset_fk"]}) as photo_count
@@ -143,18 +171,23 @@ def analyze_library(db_path: str | None = None) -> dict[str, Any]:
             GROUP BY p.Z_PK
             ORDER BY photo_count DESC
             LIMIT 10
-        """)
-        top_people = [{"name": row["ZFULLNAME"], "photo_count": row["photo_count"]} for row in cursor.fetchall()]
+        """).fetchall()
+            if has_faces
+            else None
+        )
+        top_people = (
+            [{"name": row["ZFULLNAME"], "photo_count": row["photo_count"]} for row in people_rows]
+            if people_rows is not None
+            else None
+        )
 
         # Quality score distribution (sample to avoid expensive computation)
-        cursor.execute("""
+        score_terms, score_join = computed_scores_sql(registry, *QUALITY_SCORE_COLUMNS)
+        cursor.execute(f"""
             SELECT
-                ca.ZFAILURESCORE,
-                ca.ZNOISESCORE,
-                ca.ZPLEASANTCOMPOSITIONSCORE,
-                ca.ZPLEASANTLIGHTINGSCORE
+                {", ".join(score_terms)}
             FROM ZASSET a
-            LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
+            {score_join}
             WHERE a.ZTRASHEDSTATE != 1 AND a.ZKIND = 0
             LIMIT 1000
         """)
@@ -184,13 +217,16 @@ def analyze_library(db_path: str | None = None) -> dict[str, Any]:
         with_location = cursor.fetchone()["count"]
 
         # Burst stats
-        cursor.execute("""
-            SELECT COUNT(*) as count FROM ZASSET
-            WHERE ZTRASHEDSTATE != 1 AND ZAVALANCHEKIND > 0
-        """)
-        burst_count = cursor.fetchone()["count"]
+        burst_count = None
+        if has_bursts:
+            cursor.execute("""
+                SELECT COUNT(*) as count FROM ZASSET
+                WHERE ZTRASHEDSTATE != 1 AND ZAVALANCHEKIND > 0
+            """)
+            burst_count = cursor.fetchone()["count"]
 
         return {
+            "degraded": degraded.entries,
             "summary": {
                 "total_assets": total_assets,
                 "total_storage": total_storage,
@@ -234,7 +270,7 @@ def format_summary(analysis: dict[str, Any]) -> str:
     lines.append("By Type:")
     by_type = analysis["by_type"]
     for key in ["photo", "video", "screenshots", "favorites", "hidden", "bursts", "with_location"]:
-        if key in by_type and by_type[key] > 0:
+        if (by_type.get(key) or 0) > 0:
             lines.append(f"  {key.title()}: {by_type[key]:,}")
     lines.append("")
 

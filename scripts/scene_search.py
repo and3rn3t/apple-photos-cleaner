@@ -18,6 +18,22 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
+from _schema import FILE_SIZE, SCENES
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZKIND",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+    *SCENES,
+    "ZSCENECLASSIFICATION.ZCONFIDENCE",
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
 
 
 def search_scenes(
@@ -40,7 +56,7 @@ def search_scenes(
     Returns:
         Scene search/inventory dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Scene search") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 

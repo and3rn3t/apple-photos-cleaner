@@ -10,7 +10,9 @@ from datetime import datetime
 from typing import Any
 
 from _common import (
+    QUALITY_SCORE_COLUMNS,
     PhotosDB,
+    computed_scores_sql,
     coredata_to_local,
     detect_face_schema,
     get_quality_score,
@@ -19,6 +21,23 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
+from _schema import FACES, QUALITY_SCORES, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZADDITIONALASSETATTRIBUTES.ZASSET",
+    *FACES,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    # Only ranks each person's best photos; without it they are listed unranked.
+    "best_photos": QUALITY_SCORES,
+    "catalog_face_count": ("ZPERSON.ZFACECOUNT",),
+}
 
 
 def analyze_people(
@@ -37,9 +56,15 @@ def analyze_people(
     Returns:
         People analysis dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="People analysis") as conn:
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
+        registry = get_schema(conn)
+        degraded = Degradation(registry)
+        degraded.check("best_photos", *OPTIONAL_COLUMNS["best_photos"])
+        degraded.check("catalog_face_count", *OPTIONAL_COLUMNS["catalog_face_count"])
+        score_terms, score_join = computed_scores_sql(registry, *QUALITY_SCORE_COLUMNS)
+        scores = ",\n                    ".join(score_terms)
         tz_available = has_timezone_offset(cursor)
         local_dt = local_datetime_sql(tz_available)
 
@@ -49,7 +74,7 @@ def analyze_people(
             SELECT
                 p.Z_PK as person_id,
                 p.ZFULLNAME as name,
-                p.ZFACECOUNT as face_count,
+                {registry.select("ZPERSON.ZFACECOUNT", "p", as_="face_count")},
                 COUNT(DISTINCT df.{schema["asset_fk"]}) as photo_count
             FROM ZPERSON p
             JOIN ZDETECTEDFACE df ON p.Z_PK = df.{schema["person_fk"]}
@@ -70,7 +95,8 @@ def analyze_people(
                 {
                     "person_id": row["person_id"],
                     "name": row["name"],
-                    "face_count": row["face_count"] or 0,
+                    # None when this library has no catalog face count (see "degraded")
+                    "face_count": row["face_count"],
                     "photo_count": row["photo_count"],
                 }
             )
@@ -118,19 +144,16 @@ def analyze_people(
                     a.ZFILENAME,
                     a.ZDATECREATED,
                     a.ZFAVORITE,
-                    ca.ZFAILURESCORE,
-                    ca.ZNOISESCORE,
-                    ca.ZPLEASANTCOMPOSITIONSCORE,
-                    ca.ZPLEASANTLIGHTINGSCORE,
+                    {scores},
                     {tz_offset_sql(tz_available)} AS tz_offset
                 FROM ZASSET a
                 JOIN ZDETECTEDFACE df ON a.Z_PK = df.{schema["asset_fk"]}
                 LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
-                LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
+                {score_join}
                 WHERE df.{schema["person_fk"]} = ?
                 AND a.ZTRASHEDSTATE != 1
                 AND a.ZKIND = 0
-                ORDER BY ca.ZPLEASANTCOMPOSITIONSCORE DESC NULLS LAST
+                ORDER BY ZPLEASANTCOMPOSITIONSCORE DESC NULLS LAST
                 LIMIT 5
             """,
                 (pid,),
@@ -240,6 +263,7 @@ def analyze_people(
             )
 
         return {
+            "degraded": degraded.entries,
             "people": detailed_people,
             "co_occurrences": co_occurrence_list[:30],
             "summary": {

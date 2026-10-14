@@ -18,7 +18,21 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
-from _schema import get_schema
+from _schema import FILE_SIZE, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "shared_library": ("asset.library_scope",),
+    "contributors": ("asset.shared_library_scope_id",),
+}
 
 
 def analyze_shared_library(
@@ -30,18 +44,18 @@ def analyze_shared_library(
     Returns a breakdown of personal vs shared assets, storage comparison,
     contributor identifiers, and content-type distributions.
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Shared Library analysis") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check which columns are available
-        schema = get_schema(conn)
-        has_scope = schema.has("asset.library_scope")
-        has_shared_id = schema.has("asset.shared_library_scope_id")
-        has_active = schema.has("asset.library_scope_participation")
+        degraded = Degradation(get_schema(conn))
+        has_scope = degraded.check("shared_library", *OPTIONAL_COLUMNS["shared_library"])
+        has_shared_id = degraded.check("contributors", *OPTIONAL_COLUMNS["contributors"])
 
         if not has_scope:
             return {
+                "degraded": degraded.entries,
                 "error": "Shared Library columns not found. "
                 "Shared Library requires macOS 13+ / iOS 16+ and Photos database v16+.",
                 "shared_library_enabled": False,
@@ -66,8 +80,6 @@ def analyze_shared_library(
         ]
         if has_shared_id:
             select_cols.append("a.ZSHAREDLIBRARYSCOPEIDENTIFIER")
-        if has_active:
-            select_cols.append("a.ZACTIVELIBRARYSCOPEPARTICIPATIONSTATE")
 
         query = f"""
             SELECT {", ".join(select_cols)}
@@ -155,6 +167,7 @@ def analyze_shared_library(
         monthly_sorted = sorted(shared_by_month.items(), reverse=True)[:12]
 
         return {
+            "degraded": degraded.entries,
             "shared_library_enabled": shared_enabled,
             "contributors": contributor_list,
             "shared_by_year": [

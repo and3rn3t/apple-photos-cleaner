@@ -8,7 +8,11 @@ import sys
 from typing import Any
 
 from _common import PhotosDB, format_size, run_script
-from _schema import get_schema
+from _schema import FILE_SIZE, album_junction, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = ("ZASSET.ZTRASHEDSTATE", *FILE_SIZE, "ZGENERICALBUM.ZTITLE", "ZGENERICALBUM.ZKIND")
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
 
 
 def audit_albums(
@@ -23,7 +27,7 @@ def audit_albums(
     Returns:
         Album audit dictionary
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Album audit") as conn:
         cursor = conn.cursor()
 
         # Get all user albums (filter out system/smart albums)
@@ -203,25 +207,11 @@ def _find_album_junction_table(cursor) -> tuple | None:
     Returns:
         Tuple of (album_column, asset_column, table_name) or None
     """
-    schema = get_schema(cursor)
-
-    # Look for junction tables matching the pattern
-    for table in schema.tables():
-        if table.startswith("Z_") and "ASSETS" in table.upper():
-            columns = sorted(schema.columns(table))
-
-            album_col = None
-            asset_col = None
-            for col in columns:
-                if "ALBUMS" in col.upper():
-                    album_col = col
-                elif "ASSETS" in col.upper():
-                    asset_col = col
-
-            if album_col and asset_col:
-                return (album_col, asset_col, table)
-
-    return None
+    found = album_junction(get_schema(cursor))
+    if found is None:
+        return None
+    table, album_col, asset_col = found
+    return (album_col, asset_col, table)
 
 
 def format_summary(data: dict[str, Any]) -> str:

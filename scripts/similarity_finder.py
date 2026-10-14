@@ -22,7 +22,45 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
-from _schema import get_schema
+from _schema import FILE_SIZE, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZHEIGHT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZASSET.ZWIDTH",
+    *FILE_SIZE,
+)
+# The similarity vector. A missing feature counts as 0, which shifts cosine scores, so it is declared.
+FEATURE_COLUMNS: tuple[str, ...] = (
+    "ZPLEASANTCOMPOSITIONSCORE",
+    "ZPLEASANTLIGHTINGSCORE",
+    "ZPLEASANTPATTERNSCORE",
+    "ZFAILURESCORE",
+    "ZNOISESCORE",
+    "ZPLEASANTSYMMETRYSCORE",
+    "ZPLEASANTCOLORHUESCORE",
+    "ZPLEASANTWALLPAPERSCORE",
+    "ZHARMONIOUSCOLORSCORE",
+    "ZIMMERSIVENESSSCORE",
+    "ZINTERACTIONSCORE",
+    "ZPLEASANTPERSPECTIVESCORE",
+    "ZPLEASANTSHARPSCORE",
+    "ZPLEASANTPOSTPROCESSINGSCORE",
+    "ZTASTEFULLYBLURREDSCORE",
+    "ZWELLFRAMEDSUBJECTSCORE",
+    "ZWELLTIMEDSHOTSCORE",
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "similarity": ("ZCOMPUTEDASSETATTRIBUTES.ZASSET", "computed.composition"),
+    "similarity_features": tuple(f"ZCOMPUTEDASSETATTRIBUTES.{c}" for c in FEATURE_COLUMNS),
+}
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -42,26 +80,7 @@ def _extract_features(row: dict) -> list[float]:
     Uses quality-related scores and scene classification data that
     Apple Photos computes for every image.
     """
-    feature_keys = [
-        "ZPLEASANTCOMPOSITIONSCORE",
-        "ZPLEASANTLIGHTINGSCORE",
-        "ZPLEASANTPATTERNSCORE",
-        "ZFAILURESCORE",
-        "ZNOISESCORE",
-        "ZPLEASANTSYMMETRYSCORE",
-        "ZPLEASANTCOLORHUESCORE",
-        "ZPLEASANTWALLPAPERSCORE",
-        "ZHARMONIOUSCOLORSCORE",
-        "ZIMMERSIVENESSSCORE",
-        "ZINTERACTIONSCORE",
-        "ZPLEASANTPERSPECTIVESCORE",
-        "ZPLEASANTSHARPSCORE",
-        "ZPLEASANTPOSTPROCESSINGSCORE",
-        "ZTASTEFULLYBLURREDSCORE",
-        "ZWELLFRAMEDSUBJECTSCORE",
-        "ZWELLTIMEDSHOTSCORE",
-    ]
-    return [_safe_float(row.get(key)) for key in feature_keys]
+    return [_safe_float(row.get(key)) for key in FEATURE_COLUMNS]
 
 
 def find_similar_photos(
@@ -82,15 +101,17 @@ def find_similar_photos(
     Returns:
         Similar photo groups and summary statistics
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Similarity detection") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check available columns
-        has_composition = get_schema(conn).has("computed.composition")
-
-        if not has_composition:
+        degraded = Degradation(get_schema(conn))
+        has_similarity = degraded.check("similarity", *OPTIONAL_COLUMNS["similarity"])
+        degraded.check("similarity_features", *OPTIONAL_COLUMNS["similarity_features"])
+        if not has_similarity:
             return {
+                "degraded": degraded.entries,
                 "error": "Computed asset attributes not available in this database version.",
                 "groups": [],
                 "summary": {"total_compared": 0, "groups_found": 0},
@@ -204,6 +225,7 @@ def find_similar_photos(
         total_extra_photos = sum(g["member_count"] - 1 for g in similar_groups)
 
         return {
+            "degraded": degraded.entries,
             "groups": similar_groups[:100],
             "summary": {
                 "total_compared": len(photos),

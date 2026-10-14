@@ -12,8 +12,16 @@ from pathlib import Path
 
 import pytest
 
-from _common import connect_db, detect_face_schema, has_timezone_offset, require_uuid_support
-from _schema import LOGICAL_COLUMNS, PhotosConnection, SchemaRegistry, SchemaUnsupportedError, get_schema
+from _common import PhotosDB, connect_db, detect_face_schema, format_degraded, has_timezone_offset, require_uuid_support
+from _schema import (
+    LOGICAL_COLUMNS,
+    Degradation,
+    PhotosConnection,
+    SchemaRegistry,
+    SchemaUnsupportedError,
+    album_junction,
+    get_schema,
+)
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 
@@ -119,3 +127,53 @@ def test_only_the_registry_inspects_the_schema(script):
     source = (SCRIPTS_DIR / script).read_text(encoding="utf-8")
     probes = re.findall(r"PRAGMA\s+table_info|pragma_table_info\(|FROM\s+sqlite_master", source, re.IGNORECASE)
     assert not probes, f"{script} inspects the schema directly; use _schema.get_schema() instead"
+
+
+class TestDegradationHelpers:
+    def test_physical_names_resolve(self):
+        schema = SchemaRegistry(make_db("CREATE TABLE ZASSET (ZKIND INTEGER)"))
+        assert schema.has("ZASSET.ZKIND")
+        assert not schema.has("ZASSET.ZNOPE")
+        assert schema.missing("ZASSET.ZKIND", "ZASSET.ZNOPE", "face.person_fk") == [
+            "ZASSET.ZNOPE",
+            "ZDETECTEDFACE.ZPERSONFORFACE/ZPERSON",
+        ]
+
+    def test_select_degrades_to_null(self):
+        schema = SchemaRegistry(make_db("CREATE TABLE ZPERSON (Z_PK INTEGER, ZFULLNAME TEXT)"))
+        assert schema.select("ZPERSON.ZFULLNAME", "p") == "p.ZFULLNAME"
+        assert schema.select("ZPERSON.ZFACECOUNT", "p") == "NULL AS ZFACECOUNT"
+        assert schema.select("ZPERSON.ZFACECOUNT", "p", as_="n") == "NULL AS n"
+        assert schema.select("ZPERSON.ZFULLNAME", "p", as_="name") == "p.ZFULLNAME AS name"
+
+    def test_degradation_records_each_section_once(self):
+        degraded = Degradation(SchemaRegistry(make_db("CREATE TABLE ZASSET (ZKIND INTEGER)")))
+        assert degraded.check("kinds", "ZASSET.ZKIND")
+        assert not degraded.check("bursts", "ZASSET.ZAVALANCHEKIND", "ZASSET.ZAVALANCHEPICKTYPE")
+        assert not degraded.check("bursts", "ZASSET.ZAVALANCHEKIND")
+        assert degraded.entries == [
+            {"section": "bursts", "reason": "missing column(s): ZASSET.ZAVALANCHEKIND, ZASSET.ZAVALANCHEPICKTYPE"}
+        ]
+
+    @pytest.mark.parametrize("number", [26, 27, 28, 33])
+    def test_album_junction_is_found_by_shape(self, number):
+        schema = SchemaRegistry(make_db(f"CREATE TABLE Z_{number}ASSETS (Z_{number}ALBUMS INTEGER, Z_3ASSETS INTEGER)"))
+        assert album_junction(schema) == (f"Z_{number}ASSETS", f"Z_{number}ALBUMS", "Z_3ASSETS")
+
+    def test_no_album_junction(self):
+        assert album_junction(SchemaRegistry(make_db("CREATE TABLE Z_1KEYWORDS (a)"))) is None
+
+    def test_format_degraded(self):
+        assert format_degraded({"degraded": []}) == ""
+        note = format_degraded({"degraded": [{"section": "bursts", "reason": "missing column(s): ZASSET.ZX"}]})
+        assert "bursts: missing column(s): ZASSET.ZX" in note
+
+
+def test_photosdb_require_closes_and_raises(tmp_path):
+    path = tmp_path / "Photos.sqlite"
+    make_db("CREATE TABLE ZASSET (Z_PK INTEGER)").backup(sqlite3.connect(path))
+    with (
+        pytest.raises(SchemaUnsupportedError, match=r"ZASSET\.ZKIND.*Test op"),
+        PhotosDB(str(path), require=("ZASSET.ZKIND",), operation="Test op"),
+    ):
+        pass

@@ -8,7 +8,9 @@ from collections import defaultdict
 from typing import Any
 
 from _common import (
+    QUALITY_SCORE_COLUMNS,
     PhotosDB,
+    computed_scores_sql,
     coredata_to_local,
     format_size,
     get_quality_score,
@@ -18,6 +20,26 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
+from _schema import FILE_SIZE, QUALITY_SCORES, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZHEIGHT",
+    "ZASSET.ZISDETECTEDSCREENSHOT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZASSET.ZWIDTH",
+    *FILE_SIZE,
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    # Apple's own duplicate detection (macOS 13+); without it only timestamp+dimension matching runs.
+    "apple_duplicates": ("ZASSET.ZDUPLICATEASSETVISIBILITYSTATE",),
+    # Quality only influences which copy is recommended to keep.
+    "keep_quality": QUALITY_SCORES,
+}
 
 
 def find_duplicates(db_path: str | None = None) -> dict[str, Any]:
@@ -27,14 +49,21 @@ def find_duplicates(db_path: str | None = None) -> dict[str, Any]:
     Returns:
         Dictionary with duplicate groups and recommendations
     """
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Duplicate detection") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
+        schema = get_schema(conn)
+        degraded = Degradation(schema)
+        has_apple_duplicates = degraded.check("apple_duplicates", *OPTIONAL_COLUMNS["apple_duplicates"])
+        degraded.check("keep_quality", *OPTIONAL_COLUMNS["keep_quality"])
+        score_terms, score_join = computed_scores_sql(schema, *QUALITY_SCORE_COLUMNS)
+        scores = ",\n                ".join(score_terms)
 
         duplicate_groups = []
 
         # Method 1: Apple's built-in duplicate detection
-        cursor.execute(f"""
+        apple_rows = (
+            cursor.execute(f"""
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
@@ -46,20 +75,20 @@ def find_duplicates(db_path: str | None = None) -> dict[str, Any]:
                 a.ZDUPLICATEASSETVISIBILITYSTATE,
                 aa.ZORIGINALFILESIZE,
                 {tz_offset_sql(tz_available)} AS tz_offset,
-                ca.ZFAILURESCORE,
-                ca.ZNOISESCORE,
-                ca.ZPLEASANTCOMPOSITIONSCORE,
-                ca.ZPLEASANTLIGHTINGSCORE
+                {scores}
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
-            LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
+            {score_join}
             WHERE a.ZTRASHEDSTATE != 1
             AND a.ZDUPLICATEASSETVISIBILITYSTATE > 0
             ORDER BY a.ZDATECREATED
         """)
+            if has_apple_duplicates
+            else []
+        )
 
         apple_duplicates: dict[Any, list[dict[str, Any]]] = {}
-        for row in cursor:
+        for row in apple_rows:
             state = row["ZDUPLICATEASSETVISIBILITYSTATE"]
             if state not in apple_duplicates:
                 apple_duplicates[state] = []
@@ -72,6 +101,7 @@ def find_duplicates(db_path: str | None = None) -> dict[str, Any]:
                 duplicate_groups.append(group)
 
         # Method 2: Same timestamp + same dimensions
+        not_caught_by_apple = "AND a.ZDUPLICATEASSETVISIBILITYSTATE = 0" if has_apple_duplicates else ""
         cursor.execute(f"""
             SELECT
                 a.Z_PK,
@@ -83,16 +113,13 @@ def find_duplicates(db_path: str | None = None) -> dict[str, Any]:
                 a.ZISDETECTEDSCREENSHOT,
                 aa.ZORIGINALFILESIZE,
                 {tz_offset_sql(tz_available)} AS tz_offset,
-                ca.ZFAILURESCORE,
-                ca.ZNOISESCORE,
-                ca.ZPLEASANTCOMPOSITIONSCORE,
-                ca.ZPLEASANTLIGHTINGSCORE
+                {scores}
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
-            LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
+            {score_join}
             WHERE a.ZTRASHEDSTATE != 1
             AND a.ZKIND = 0  -- photos only
-            AND a.ZDUPLICATEASSETVISIBILITYSTATE = 0  -- not already caught by Apple
+            {not_caught_by_apple}
             ORDER BY a.ZDATECREATED, a.ZWIDTH, a.ZHEIGHT
         """)
 
@@ -121,6 +148,7 @@ def find_duplicates(db_path: str | None = None) -> dict[str, Any]:
         )
 
         return {
+            "degraded": degraded.entries,
             "duplicate_groups": duplicate_groups,
             "summary": {
                 "total_groups": len(duplicate_groups),

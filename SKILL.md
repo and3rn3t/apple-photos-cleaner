@@ -1181,6 +1181,8 @@ python3 scripts/shared_library.py --output shared_report.json
 
 **In conversation:** Synthesize the data into natural language, don't just read the output
 
+**Partial results (`degraded`):** Apple adds and renames database columns between macOS versions. Every JSON result has a `degraded` list, normally empty. Each entry, such as `{"section": "burst_leftovers", "reason": "missing column(s): ZASSET.ZAVALANCHEKIND"}`, names a section this library couldn't compute. That section is `null`, or was computed from the data that does exist. Tell the user that part isn't available on their macOS version, and don't present a `null` as zero. `--human` output ends with the same note.
+
 ## Requirements
 
 - **Python:** 3.10+ (tested with 3.10, 3.14, 3.15). Stock macOS `/usr/bin/python3` is 3.9 and too old — install a current one with `brew install python`
@@ -1261,7 +1263,7 @@ Every command exits with one of these codes, so branch on the code rather than p
 | 2 | Usage error (bad flag or value) | Fix the arguments |
 | 3 | Photos database not found | Pass `--library` or `--db-path` |
 | 4 | Permission denied | Grant Full Disk Access to the terminal or agent app |
-| 5 | Schema unsupported | This macOS version's library lacks a column the command needs; open an issue |
+| 5 | Schema unsupported | This library lacks a column the command can't run without. stderr names it. For a mutating command, or a filter like `--person`/`--album`, it refused rather than act on partial data. Open an issue with the macOS version |
 | 10 | Cancelled by the user | |
 | 11 | Confirmation required | A mutating command ran without a matching `--confirm` token. Nothing was changed. Show the user the fresh preview on stdout and ask again |
 

@@ -11,6 +11,7 @@ from typing import Any
 
 from _common import (
     PhotosDB,
+    computed_scores_sql,
     coredata_to_local,
     format_size,
     get_quality_score,
@@ -20,6 +21,37 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
+from _schema import FILE_SIZE, Degradation, get_schema
+
+# Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
+REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ZASSET.ZDATECREATED",
+    "ZASSET.ZFAVORITE",
+    "ZASSET.ZFILENAME",
+    "ZASSET.ZHEIGHT",
+    "ZASSET.ZKIND",
+    "ZASSET.ZLATITUDE",
+    "ZASSET.ZLONGITUDE",
+    "ZASSET.ZTRASHEDSTATE",
+    "ZASSET.ZWIDTH",
+    *FILE_SIZE,
+)
+# The seasonal score blends whichever of these exist.
+SEASONAL_SCORE_COLUMNS = (
+    "ZPLEASANTCOMPOSITIONSCORE",
+    "ZPLEASANTLIGHTINGSCORE",
+    "ZPLEASANTPATTERNSCORE",
+    "ZFAILURESCORE",
+    "ZNOISESCORE",
+    "ZHARMONIOUSCOLORSCORE",
+    "ZPLEASANTSYMMETRYSCORE",
+    "ZPLEASANTWALLPAPERSCORE",
+    "ZWEIGHTEDSCENECLASSIFICATIONSCORE",
+)
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "scores": ("ZCOMPUTEDASSETATTRIBUTES.ZASSET", *(f"ZCOMPUTEDASSETATTRIBUTES.{c}" for c in SEASONAL_SCORE_COLUMNS)),
+    "titles": ("ZADDITIONALASSETATTRIBUTES.ZTITLE",),
+}
 
 # Season definitions (Northern Hemisphere by default)
 SEASONS_NH = {
@@ -74,9 +106,14 @@ def get_seasonal_highlights(
     """
     month_to_season = MONTH_TO_SEASON_SH if southern_hemisphere else MONTH_TO_SEASON_NH
 
-    with PhotosDB(db_path) as conn:
+    with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Seasonal highlights") as conn:
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
+        registry = get_schema(conn)
+        degraded = Degradation(registry)
+        degraded.check("scores", *OPTIONAL_COLUMNS["scores"])
+        degraded.check("titles", *OPTIONAL_COLUMNS["titles"])
+        score_terms, score_join = computed_scores_sql(registry, *SEASONAL_SCORE_COLUMNS)
 
         where = ["a.ZTRASHEDSTATE != 1", "a.ZKIND = 0"]  # Photos only
         params: list = []
@@ -89,20 +126,12 @@ def get_seasonal_highlights(
             SELECT
                 a.Z_PK, a.ZFILENAME, a.ZDATECREATED, a.ZFAVORITE,
                 a.ZWIDTH, a.ZHEIGHT, a.ZLATITUDE, a.ZLONGITUDE,
-                aa.ZORIGINALFILESIZE, aa.ZTITLE,
+                aa.ZORIGINALFILESIZE, {registry.select("ZADDITIONALASSETATTRIBUTES.ZTITLE", "aa")},
                 {tz_offset_sql(tz_available)} AS tz_offset,
-                ca.ZPLEASANTCOMPOSITIONSCORE,
-                ca.ZPLEASANTLIGHTINGSCORE,
-                ca.ZPLEASANTPATTERNSCORE,
-                ca.ZFAILURESCORE,
-                ca.ZNOISESCORE,
-                ca.ZHARMONIOUSCOLORSCORE,
-                ca.ZPLEASANTSYMMETRYSCORE,
-                ca.ZPLEASANTWALLPAPERSCORE,
-                ca.ZWEIGHTEDSCENECLASSIFICATIONSCORE
+                {", ".join(score_terms)}
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
-            LEFT JOIN ZCOMPUTEDASSETATTRIBUTES ca ON a.Z_PK = ca.ZASSET
+            {score_join}
             WHERE {" AND ".join(where)}
             ORDER BY a.ZDATECREATED DESC
         """
@@ -188,6 +217,7 @@ def get_seasonal_highlights(
         busiest_season = max(total_by_season, key=lambda s: total_by_season[s]) if total_photos else None
 
         return {
+            "degraded": degraded.entries,
             "highlights": highlights,
             "distribution": distribution[:20],
             "summary": {

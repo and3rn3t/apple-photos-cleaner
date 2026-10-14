@@ -244,8 +244,6 @@ SCRIPT_ARGS = {
     "cleanup_executor": ["--category", "all_screenshots"],
     "smart_export": ["--output-dir", "{tmp}", "--plan-only"],
 }
-# Scripts that still crash when an optional column is absent. T1.4 empties this.
-NOT_YET_DEGRADING = {"seasonal_highlights": "hardcodes optional ZCOMPUTEDASSETATTRIBUTES scores"}
 
 
 def run_cli(script: str, *args: str) -> subprocess.CompletedProcess:
@@ -323,15 +321,7 @@ class TestReadOnlyGuard:
         assert conn.execute(recursive).fetchone()[0] == 3
         conn.close()
 
-    @pytest.mark.parametrize(
-        "script",
-        [
-            pytest.param(name, marks=pytest.mark.xfail(strict=True, reason=f"T1.4: {NOT_YET_DEGRADING[name]}"))
-            if name in NOT_YET_DEGRADING
-            else name
-            for name in SCRIPT_NAMES
-        ],
-    )
+    @pytest.mark.parametrize("script", SCRIPT_NAMES)
     def test_every_script_runs_under_the_guard(self, script, db_file, tmp_path):
         """Unit tests stub PhotosDB; this drives each real CLI through connect_db."""
         args = [a.replace("{tmp}", str(tmp_path / "export")) for a in SCRIPT_ARGS.get(script, [])]
