@@ -37,7 +37,8 @@ release is cut.
   "Optimize Mac Storage" looks on, and, with `--check-automation`, AppleScript
   access to Photos.app. Each check prints pass/warn/fail and a concrete fix.
   `--format json` is for agents. SKILL.md tells agents to run it first when
-  any command fails.
+  any command fails. On Python < 3.10 (stock macOS `python3` is 3.9) it prints
+  the fix instead of crashing on import.
 - **Schema fingerprinting** (T1.2). The macOS release is read from Photos' own
   data-model version (Ventura through Sequoia ranges), and an exact
   table/column fingerprint is matched against

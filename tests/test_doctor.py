@@ -7,6 +7,7 @@ import json
 import os
 import plistlib
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -225,3 +226,45 @@ class TestAutomation:
         with patch("doctor.subprocess.run") as osascript:
             report_for("--library", str(library))
         osascript.assert_not_called()
+
+
+class TestReportShape:
+    """JSON consumers rely on a fixed check list; checks that couldn't run are "skip", never absent."""
+
+    def test_healthy(self, library):
+        _, report = report_for("--library", str(library))
+        assert [c["name"] for c in report["checks"]] == list(doctor.CHECK_NAMES)
+
+    def test_missing_library(self, tmp_path):
+        _, report = report_for("--db-path", str(tmp_path / "missing.sqlite"))
+        assert [c["name"] for c in report["checks"]] == list(doctor.CHECK_NAMES)
+        assert report["by_name"]["read_access"]["status"] == "skip"
+        assert report["by_name"]["optimize_storage"]["status"] == "skip"
+
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores file permissions")
+    def test_unreadable(self, library):
+        db = library / "database" / "Photos.sqlite"
+        db.chmod(0)
+        try:
+            _, report = report_for("--library", str(library))
+        finally:
+            db.chmod(0o600)
+        assert [c["name"] for c in report["checks"]] == list(doctor.CHECK_NAMES)
+        assert report["by_name"]["optimize_storage"]["status"] == "skip"
+
+
+def test_old_python_gets_the_fix_not_a_traceback():
+    """Stock macOS python3 is 3.9: the project modules can't even import there, so _bootstrap must catch it."""
+    scripts = Path(doctor.__file__).parent
+    code = f"import sys; sys.version_info = (3, 9, 25, 'final', 0); sys.path.insert(0, {str(scripts)!r}); import _bootstrap"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 1
+    assert "Python 3.9 is too old" in result.stderr
+    assert "brew install python" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_doctor_imports_bootstrap_before_any_project_module():
+    source = Path(doctor.__file__).read_text(encoding="utf-8")
+    project_imports = [line for line in source.splitlines() if line.startswith(("import _", "from _"))]
+    assert project_imports[0] == "import _bootstrap"

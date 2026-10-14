@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Must be the first project import: on Python < 3.10 it exits with the fix before _common fails to import.
+import _bootstrap
 from _common import (
     DatabaseNotFoundError,
     ExitCode,
@@ -39,7 +41,7 @@ OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 FINGERPRINTS_PATH = SCRIPTS_DIR.parent / "references" / "schema-fingerprints.json"
-MIN_PYTHON = (3, 10)
+MIN_PYTHON = _bootstrap.MIN_PYTHON
 SCHEMA_ISSUE_URL = "https://github.com/and3rn3t/apple-photos-cleaner/issues/new"
 # Below this share of originals on disk, "Optimize Mac Storage" is probably on.
 OPTIMIZED_THRESHOLD = 0.9
@@ -288,6 +290,8 @@ def diagnose(path: str | None, check_automation_flag: bool = False) -> dict[str,
     if db_path:
         conn, readable = open_database(db_path)
         checks.append(readable)
+    else:
+        checks.append(check("read_access", SKIP, "Needs the library to be found"))
 
     if conn is not None and db_path is not None:
         try:
@@ -300,7 +304,10 @@ def diagnose(path: str | None, check_automation_flag: bool = False) -> dict[str,
         finally:
             conn.close()
     else:
-        checks += [check(name, SKIP, "Needs a readable database") for name in ("schema", "features", "library_size")]
+        checks += [
+            check(name, SKIP, "Needs a readable database")
+            for name in ("schema", "features", "library_size", "optimize_storage")
+        ]
 
     checks.append(check_automation(check_automation_flag))
     report["ok"] = all(c["status"] != FAIL for c in checks)
@@ -315,6 +322,18 @@ def exit_code(report: dict[str, Any]) -> ExitCode:
         return ExitCode.PERMISSION_DENIED
     return ExitCode.ERROR if failed else ExitCode.OK
 
+
+# Every report lists these, in this order; checks that couldn't run are "skip".
+CHECK_NAMES = (
+    "python",
+    "library",
+    "read_access",
+    "schema",
+    "features",
+    "library_size",
+    "optimize_storage",
+    "automation",
+)
 
 ICONS = {OK: "✅", WARN: "⚠️ ", FAIL: "❌", SKIP: "⏭️ "}
 
