@@ -343,8 +343,10 @@ interactively it asks for confirmation first — pass --yes to skip that.
     parser.add_argument("--plan-only", action="store_true", help="Show export plan without actually exporting")
     parser.add_argument("--yes", action="store_true", help="Skip the interactive confirmation prompt")
 
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
+
     args = parser.parse_args()
-    setup_logging()
+    setup_logging(verbose=args.verbose)
 
     try:
         db_path = args.db_path or args.library

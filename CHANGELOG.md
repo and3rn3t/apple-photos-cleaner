@@ -26,6 +26,11 @@ release is cut.
 - `--library <bundle>.photoslibrary` works. Every script handed the bundle
   directory to SQLite as if it were the database file, which failed with a
   "disk I/O error"; only `--db-path` worked.
+- Library or database paths containing `?`, `#` or `%` open correctly. The
+  path went into SQLite's `file:` URI unescaped, so those characters were read
+  as URI syntax.
+- `cleanup_executor`, `smart_export` and `timeline_recap` accept `-v/--verbose`
+  like every other command. It's how you get a traceback for an unexpected error.
 - A missing Full Disk Access grant is now reported as permission denied.
   macOS privacy denials are invisible to `os.access()`, so it used to surface as
   an opaque SQLite open error.
