@@ -63,9 +63,9 @@ Covered by `TestAppleScriptEscaping`, including a real `osascript` round trip on
 
 | Threat | Mitigation | Where |
 | --- | --- | --- |
-| A mutation runs without the user seeing what it does | Both commands preview by default; executing needs an explicit flag | `cleanup_executor --execute`, `smart_export` without `--plan-only` |
+| A mutation runs without the user seeing what it does | Both commands only preview unless given the preview's token: `cleanup_executor --execute --confirm <token>`, `smart_export --confirm <token>`. The JSON preview lists every asset; the human plan for `smart_export` shows folder totals | `cleanup_executor`, `smart_export` |
 | An agent approves for the user (piping `yes`, passing `--yes`) | The preview emits a token (`plan_token`) hashed from the exact asset UUIDs and selection options, and executing requires `--confirm <token>`. A changed set invalidates it (exit 11). There is no interactive prompt to satisfy (T1.19) | `cleanup_executor`, `smart_export`; `TestCleanupConfirmation`, `TestExportConfirmation` |
-| A runaway deletion | `--limit` (default 500) and batches of 50. Deleted items go to Recently Deleted, recoverable for 30 days | `cleanup_executor` |
+| A runaway deletion | **Partial.** `--limit` defaults to 500 and must be a positive integer; a negative value used to reach SQLite as "no limit". It is still caller-controlled, so an agent can raise it, but the token then covers that larger set and the user sees its size. Deleted items go to Recently Deleted, recoverable for 30 days. *Planned:* a hard per-run cap and a cool-down (T1.21) | `cleanup_executor`; `TestCleanupConfirmation` |
 
 A token proves the agent ran the preview, not that the user read it. SKILL.md tells agents to
 pass `--confirm` only after the user says yes. The token makes sure that what runs is what was shown.
@@ -79,6 +79,12 @@ pass `--confirm` only after the user says yes. The token makes sure that what ru
 
 Covered by `TestPathSafety`.
 
+**Known gap (TOCTOU):** the containment check runs before the folder is created and handed to
+Photos.app. Something that swaps the folder for a symlink in that window can still redirect the
+export. Exploiting it needs a local process racing the export inside a directory the user chose,
+which is outside the actor model above (see *Out of scope*), so it is documented rather than
+fixed. Exporting into a directory only the user can write is the mitigation.
+
 ### 6. Output and privacy
 
 | Threat | Mitigation |
@@ -89,7 +95,7 @@ Covered by `TestPathSafety`.
 
 ## Out of scope
 
-- A malicious local user with write access to `~/Pictures`. They can edit the library directly.
+- A malicious local process with write access to `~/Pictures` (it can edit the library directly) or to the export directory (it can race the containment check).
 - A compromised Photos.app or `osascript`.
 - Supply-chain attacks on the dev toolchain. The core is stdlib-only with no runtime
   dependencies; CI actions are SHA-pinned (T0.6); release provenance is T0.7.

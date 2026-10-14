@@ -524,10 +524,11 @@ Categories:
         help=f"Items per AppleScript batch (default: {MAX_BATCH_SIZE})",
     )
     parser.add_argument("-o", "--output", help="Output JSON file")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
     parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
-    setup_logging()
+    setup_logging(verbose=args.verbose)
     if args.confirm and not args.execute:
         parser.error("--confirm only applies together with --execute")
 

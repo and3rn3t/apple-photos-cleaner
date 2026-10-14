@@ -408,8 +408,10 @@ match the current plan, or nothing is written.
         "--format", choices=["human", "json"], default="human", help="Plan/result output format (default: human)"
     )
 
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
+
     args = parser.parse_args()
-    setup_logging()
+    setup_logging(verbose=args.verbose)
     if args.confirm and args.plan_only:
         parser.error("--confirm and --plan-only are mutually exclusive")
 

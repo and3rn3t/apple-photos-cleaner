@@ -344,9 +344,10 @@ Examples:
     )
     parser.add_argument("--narrative", action="store_true", help="Output narrative text instead of JSON")
     parser.add_argument("-o", "--output", help="Output file")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
 
     args = parser.parse_args()
-    setup_logging()
+    setup_logging(verbose=args.verbose)
 
     try:
         db_path = args.db_path or args.library

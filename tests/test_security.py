@@ -24,6 +24,7 @@ import pytest
 from _common import (
     DatabaseNotFoundError,
     ExitCode,
+    PhotosDB,
     SchemaUnsupportedError,
     _deny_writes,
     build_asset_query,
@@ -297,6 +298,17 @@ class TestReadOnlyGuard:
             conn.execute(sql)
         conn.close()
 
+    @pytest.mark.parametrize("name", ["Photos?mode=rw.photoslibrary", "Trip #3.photoslibrary", "a b%20c.photoslibrary"])
+    def test_uri_special_characters_in_path(self, db_file, tmp_path, name):
+        """'?' and '#' in a library name must not be parsed as URI query/fragment (or re-enable writes)."""
+        bundle = tmp_path / name / "database"
+        bundle.mkdir(parents=True)
+        shutil.copy(db_file, bundle / "Photos.sqlite")
+        with PhotosDB(str(tmp_path / name)) as conn:
+            assert conn.execute("SELECT count(*) FROM ZASSET").fetchone()[0] > 0
+            with pytest.raises(sqlite3.DatabaseError):
+                conn.execute("DELETE FROM ZASSET")
+
     def test_reads_are_allowed(self, db_file):
         # Use PRAGMA table_info(...), never the pragma_table_info() table-valued
         # function: SQLite < ~3.45 (e.g. 3.40 in python.org's 3.10) authorizes
@@ -331,7 +343,8 @@ class TestExitCodes:
     @pytest.mark.parametrize("script", SCRIPT_NAMES)
     def test_missing_database(self, script, tmp_path):
         args = [a.replace("{tmp}", str(tmp_path)) for a in SCRIPT_ARGS.get(script, [])]
-        result = run_cli(script, "--db-path", str(tmp_path / "missing.sqlite"), *args)
+        # --verbose too: every entry point must accept it (it is how users get a traceback).
+        result = run_cli(script, "--db-path", str(tmp_path / "missing.sqlite"), "--verbose", *args)
         assert result.returncode == ExitCode.DB_NOT_FOUND, result.stderr
 
     @pytest.mark.parametrize("script", ["library_analysis", "cleanup_executor", "timeline_recap"])

@@ -17,6 +17,7 @@ import traceback
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from enum import IntEnum
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("apple_photos_cleaner")
@@ -126,7 +127,8 @@ def connect_db(db_path: str) -> sqlite3.Connection:
         ) from e
 
     # Use read-only mode with URI; busy_timeout retries if Photos.app holds a lock
-    uri = f"file:{db_path}?mode=ro"
+    # as_uri() percent-encodes the path, so a "?" or "#" in a library name stays part of it.
+    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
     try:
         conn = sqlite3.connect(uri, uri=True, timeout=5)
     except sqlite3.OperationalError as e:

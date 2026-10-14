@@ -29,9 +29,9 @@ release is cut.
 - `smart_export --format json` prints the plan, or the export result, as JSON.
 
 - `docs/threat-model.md`, linked from SECURITY.md (T0.9). It lists trust boundaries, what we
-  protect, and the mitigation and test behind each one.
+  protect, the mitigation for each threat with the code that enforces it, and the known gaps.
 - A deprecation policy in CONTRIBUTING.md (T0.16). Flags and JSON fields get one minor release
-  of warnings before removal. Safety fixes are the only exception.
+  of warnings, and removal only in a major release. Safety fixes are the only exception.
 - **Documented exit codes** (T1.9): 2 usage, 3 database not found, 4 permission
   denied (with a Full Disk Access hint), 5 schema unsupported, 10 cancelled,
   11 confirmation required. Previously every failure exited 1.
@@ -44,6 +44,11 @@ release is cut.
 - `--library <bundle>.photoslibrary` works. Every script handed the bundle
   directory to SQLite as if it were the database file, which failed with a
   "disk I/O error"; only `--db-path` worked.
+- Library or database paths containing `?`, `#` or `%` open correctly. The
+  path went into SQLite's `file:` URI unescaped, so those characters were read
+  as URI syntax.
+- `cleanup_executor`, `smart_export` and `timeline_recap` accept `-v/--verbose`
+  like every other command. It's how you get a traceback for an unexpected error.
 - A missing Full Disk Access grant is now reported as permission denied.
   macOS privacy denials are invisible to `os.access()`, so it used to surface as
   an opaque SQLite open error.
