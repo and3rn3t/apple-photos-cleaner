@@ -1,0 +1,4 @@
+{
+  "description": "Known Photos.sqlite schema fingerprints (ROADMAP T1.2). Key: SHA-256 of every Core Data table.column name, as printed by `doctor.py --schema-dump`. Contains no library data. Add an entry when a schema dump from a new macOS release is confirmed.",
+  "fingerprints": {}
+}

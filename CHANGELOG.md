@@ -31,6 +31,22 @@ release is cut.
 
 ### Added
 
+- **`doctor.py`** (T1.10). Checks Python, library location, Full Disk Access,
+  the database schema, which commands/sections/options this library can't
+  support (from every script's declared columns), library size, whether
+  "Optimize Mac Storage" looks on, and, with `--check-automation`, AppleScript
+  access to Photos.app. Each check prints pass/warn/fail and a concrete fix.
+  `--format json` is for agents. SKILL.md tells agents to run it first when
+  any command fails. On Python < 3.10 (stock macOS `python3` is 3.9) it prints
+  the fix instead of crashing on import.
+- **Schema fingerprinting** (T1.2). The macOS release is read from Photos' own
+  data-model version (Ventura through Sequoia ranges), and an exact
+  table/column fingerprint is matched against
+  `references/schema-fingerprints.json`. An unknown schema is a warning that
+  lists what will be degraded, never a crash. `doctor --schema-dump` prints
+  table definitions only (no rows) so a new release's schema can be
+  contributed.
+
 - `smart_export --format json` prints the plan, or the export result, as JSON.
 
 - `docs/threat-model.md`, linked from SECURITY.md (T0.9). It lists trust boundaries, what we

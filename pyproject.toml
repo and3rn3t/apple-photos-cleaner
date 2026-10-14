@@ -64,7 +64,7 @@ ignore = [
 "tests/*" = ["F811"]  # allow fixture redefinition
 
 [tool.ruff.lint.isort]
-known-first-party = ["_common", "_schema"]
+known-first-party = ["_bootstrap", "_common", "_schema"]
 
 [tool.coverage.report]
 # Ratchet, not a target — the suite sits around 85%. Raise this when it climbs.

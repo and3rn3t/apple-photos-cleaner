@@ -25,6 +25,8 @@ Use ``PRAGMA table_info(...)`` here, never the ``pragma_table_info()``
 table-valued function: older SQLite trips the read-only authorizer on it.
 """
 
+import hashlib
+import plistlib
 import re
 import sqlite3
 
@@ -109,6 +111,36 @@ class SchemaRegistry:
             self._columns[table] = frozenset(row[1] for row in rows)
         return self._columns[table]
 
+    def ddl(self) -> list[str]:
+        """``CREATE TABLE`` statements for every table: the schema only, never rows."""
+        rows = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND sql IS NOT NULL ORDER BY name"
+        ).fetchall()
+        return [row[0] for row in rows]
+
+    def fingerprint(self) -> str:
+        """SHA-256 of every Core Data table and column name: identifies a schema, not a library.
+
+        Only names are hashed, never rows, so it is safe to share in an issue.
+        """
+        names = sorted(
+            f"{table}.{column}" for table in self._tables if table.startswith("Z") for column in self.columns(table)
+        )
+        return hashlib.sha256("\n".join(names).encode("utf-8")).hexdigest()
+
+    def model_version(self) -> int | None:
+        """Photos' own data-model version (``PLModelVersion`` in Z_METADATA), or None if unreadable."""
+        if not self.has_column("Z_METADATA", "Z_PLIST"):
+            return None
+        row = self._conn.execute("SELECT Z_PLIST FROM Z_METADATA LIMIT 1").fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            version = plistlib.loads(row[0]).get("PLModelVersion")
+        except (plistlib.InvalidFileException, ValueError, TypeError, AttributeError):
+            return None
+        return version if isinstance(version, int) else None
+
     def has_column(self, table: str, column: str) -> bool:
         return column in self.columns(table)
 
@@ -143,6 +175,25 @@ class SchemaRegistry:
                 f"{', '.join(missing)} not found in this Photos database. {operation} cannot run without it. "
                 "Please open an issue with your macOS version."
             )
+
+
+# Photos data-model version ranges → macOS release (each major Photos release takes a block of 1000).
+MODEL_VERSION_RANGES: tuple[tuple[int, int, str], ...] = (
+    (13000, 13999, "macOS 10.15 Catalina"),
+    (14000, 14999, "macOS 11 Big Sur"),
+    (15000, 15999, "macOS 12 Monterey"),
+    (16000, 16999, "macOS 13 Ventura"),
+    (17000, 17999, "macOS 14 Sonoma"),
+    (18000, 18999, "macOS 15 Sequoia"),
+)
+# Oldest release the scripts are tested against.
+OLDEST_SUPPORTED_MODEL_VERSION = 16000
+
+
+def macos_for_model_version(version: int | None) -> str | None:
+    if version is None:
+        return None
+    return next((name for low, high, name in MODEL_VERSION_RANGES if low <= version <= high), None)
 
 
 def describe(name: str) -> str:
