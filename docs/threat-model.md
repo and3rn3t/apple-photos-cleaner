@@ -63,12 +63,13 @@ Covered by `TestAppleScriptEscaping`, including a real `osascript` round trip on
 
 | Threat | Mitigation | Where |
 | --- | --- | --- |
-| A mutation runs without the user seeing what it does | Both commands preview by default; executing needs an explicit flag | `cleanup_executor --execute`, `smart_export` without `--plan-only` |
+| A mutation runs without the user seeing what it does | **Partial.** `cleanup_executor` previews by default and executes only with `--execute`. `smart_export` exports whenever `--plan-only` is absent, and its plan shows folder totals, not individual assets | `cleanup_executor`, `smart_export` |
 | An agent approves for the user (piping `yes`, passing `--yes`) | *Planned:* the preview emits a token hashed from the exact candidate set, and executing requires `--confirm <token>`. A changed set invalidates the token (T1.19) | `cleanup_executor`, `smart_export` |
-| A runaway deletion | `--limit` (default 500) and batches of 50. Deleted items go to Recently Deleted, recoverable for 30 days | `cleanup_executor` |
+| A runaway deletion | **Partial.** `--limit` defaults to 500 but is caller-controlled, and before T1.19 a negative value reached SQLite as "no limit". Deleted items go to Recently Deleted, recoverable for 30 days. *Planned:* a hard per-run cap and a cool-down (T1.21) | `cleanup_executor` |
 
-**Known gap until T1.19 ships:** `cleanup_executor` confirms with `input()`, which a piped
-`yes` satisfies, and `smart_export` skips its prompt when stdin is not a TTY.
+**Known gaps until T1.19 ships:** `cleanup_executor` confirms with `input()`, which a piped
+`yes` satisfies. `smart_export` skips its prompt when stdin is not a TTY, so it exports without
+any approval.
 
 ### 5. Filesystem writes (`smart_export`)
 
@@ -78,6 +79,12 @@ Covered by `TestAppleScriptEscaping`, including a real `osascript` round trip on
 | A symlinked subfolder points outside, or at a sibling sharing a prefix (`/out-evil`) | `realpath` + `commonpath` containment check before every export | `export_with_applescript` |
 
 Covered by `TestPathSafety`.
+
+**Known gap (TOCTOU):** the containment check runs before the folder is created and handed to
+Photos.app. Something that swaps the folder for a symlink in that window can still redirect the
+export. Exploiting it needs a local process racing the export inside a directory the user chose,
+which is outside the actor model above (see *Out of scope*), so it is documented rather than
+fixed. Exporting into a directory only the user can write is the mitigation.
 
 ### 6. Output and privacy
 
@@ -89,7 +96,7 @@ Covered by `TestPathSafety`.
 
 ## Out of scope
 
-- A malicious local user with write access to `~/Pictures`. They can edit the library directly.
+- A malicious local process with write access to `~/Pictures` (it can edit the library directly) or to the export directory (it can race the containment check).
 - A compromised Photos.app or `osascript`.
 - Supply-chain attacks on the dev toolchain. The core is stdlib-only with no runtime
   dependencies; CI actions are SHA-pinned (T0.6); release provenance is T0.7.
