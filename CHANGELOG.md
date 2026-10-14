@@ -44,6 +44,16 @@ release is cut.
   SQLite authorizer that refuses anything but reads, so a future bug cannot
   write to `Photos.sqlite` even through a misopened connection.
 
+### Changed
+
+- **Central schema registry** (T1.1). `scripts/_schema.py` is now the only code
+  that inspects `Photos.sqlite`'s schema. It reads the table list once per
+  connection and maps logical names (`face.person_fk`, `asset.uuid`, …) to
+  whichever physical column the library has. Supporting a column Apple renames
+  is now a one-line change to `LOGICAL_COLUMNS`. Nine ad-hoc
+  `PRAGMA table_info` / `sqlite_master` probes across seven files are gone, and
+  a test keeps them out.
+
 ### Fixed
 
 - `--library <bundle>.photoslibrary` works. Every script handed the bundle

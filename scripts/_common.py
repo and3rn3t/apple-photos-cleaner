@@ -20,6 +20,8 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any
 
+from _schema import PhotosConnection, SchemaUnsupportedError, get_schema
+
 logger = logging.getLogger("apple_photos_cleaner")
 
 
@@ -34,10 +36,6 @@ class ExitCode(IntEnum):
     SCHEMA_UNSUPPORTED = 5
     USER_ABORTED = 10
     CONFIRMATION_REQUIRED = 11
-
-
-class SchemaUnsupportedError(RuntimeError):
-    """The Photos database lacks something this command cannot run without."""
 
 
 class DatabaseNotFoundError(FileNotFoundError):
@@ -130,7 +128,7 @@ def connect_db(db_path: str) -> sqlite3.Connection:
     # as_uri() percent-encodes the path, so a "?" or "#" in a library name stays part of it.
     uri = Path(db_path).resolve().as_uri() + "?mode=ro"
     try:
-        conn = sqlite3.connect(uri, uri=True, timeout=5)
+        conn = sqlite3.connect(uri, uri=True, timeout=5, factory=PhotosConnection)
     except sqlite3.OperationalError as e:
         raise sqlite3.OperationalError(
             f"Failed to open database: {db_path} — {e}\n"
@@ -150,7 +148,7 @@ _READ_ACTIONS = frozenset(
         getattr(sqlite3, "SQLITE_RECURSIVE", 33),  # module constant added in Python 3.11
     }
 )
-# Use these as PRAGMA statements. The pragma_table_info() table-valued form trips
+# Use these as PRAGMA statements (see _schema). The table-valued pragma form trips
 # the guard on older SQLite, which authorizes internal sqlite_master UPDATEs for it.
 _READ_ONLY_PRAGMAS = frozenset({"table_info", "table_xinfo"})
 
@@ -201,8 +199,7 @@ def coredata_to_local(timestamp: float | None, tz_offset: int | None) -> datetim
 
 def has_timezone_offset(cursor: sqlite3.Cursor) -> bool:
     """Whether this library's schema records a per-asset capture time zone offset."""
-    cursor.execute("PRAGMA table_info(ZADDITIONALASSETATTRIBUTES)")
-    return any(row[1] == "ZTIMEZONEOFFSET" for row in cursor.fetchall())
+    return get_schema(cursor).has("asset_attrs.tz_offset")
 
 
 def tz_offset_sql(tz_offset_available: bool, attrs: str = "aa") -> str:
@@ -401,14 +398,13 @@ def detect_face_schema(cursor: sqlite3.Cursor) -> dict[str, str]:
     Older macOS: ZPERSON, ZASSET
     Newer macOS (Sequoia+): ZPERSONFORFACE, ZASSETFORFACE
     """
-    cursor.execute("PRAGMA table_info(ZDETECTEDFACE)")
-    columns = {row[1] for row in cursor.fetchall()}
-
-    if "ZPERSONFORFACE" in columns and "ZASSETFORFACE" in columns:
-        return {"person_fk": "ZPERSONFORFACE", "asset_fk": "ZASSETFORFACE"}
-    else:
-        # Fallback to old schema
-        return {"person_fk": "ZPERSON", "asset_fk": "ZASSET"}
+    schema = get_schema(cursor)
+    # Fall back to the pre-Sequoia names when the table is missing, so queries fail loudly
+    # on the absent table rather than on a None column.
+    return {
+        "person_fk": schema.col("face.person_fk") or "ZPERSON",
+        "asset_fk": schema.col("face.asset_fk") or "ZASSET",
+    }
 
 
 class PhotosDB:
@@ -578,14 +574,7 @@ def require_uuid_support(cursor: sqlite3.Cursor, operation: str) -> None:
     Raises:
         SchemaUnsupportedError: If ZASSET has no ZUUID column.
     """
-    cursor.execute("PRAGMA table_info(ZASSET)")
-    columns = {row[1] for row in cursor.fetchall()}
-    if "ZUUID" not in columns:
-        raise SchemaUnsupportedError(
-            f"ZASSET.ZUUID not found in this Photos database. {operation} cannot safely "
-            "identify assets without it and will not run. Please open an issue with "
-            "your macOS version."
-        )
+    get_schema(cursor).require("asset.uuid", operation=f"{operation} (which targets assets by UUID)")
 
 
 def build_identifier_lists(items: list[dict]) -> tuple[str, str]:

@@ -18,6 +18,7 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
+from _schema import get_schema
 
 # iCloud local state values
 CLOUD_STATE_NOT_UPLOADED = 0
@@ -43,13 +44,12 @@ def analyze_icloud_status(
         tz_available = has_timezone_offset(cursor)
 
         # Check available columns
-        cursor.execute("PRAGMA table_info(ZASSET)")
-        columns = {row["name"] for row in cursor.fetchall()}
-        has_cloud_state = "ZCLOUDLOCALSTATE" in columns
-        has_cloud_asset = "ZCLOUDISMYASSET" in columns
-        has_cloud_date = "ZCLOUDBATCHPUBLISHDATE" in columns
-        has_downloadable = "ZCLOUDISDOWNLOADABLE" in columns
-        has_visible = "ZVISIBILITYSTATE" in columns
+        schema = get_schema(conn)
+        has_cloud_state = schema.has("asset.cloud_local_state")
+        has_cloud_asset = schema.has("asset.cloud_is_my_asset")
+        has_cloud_date = schema.has("asset.cloud_batch_publish_date")
+        has_downloadable = schema.has("asset.cloud_is_downloadable")
+        has_visible = schema.has("asset.visibility_state")
 
         if not has_cloud_state:
             return {

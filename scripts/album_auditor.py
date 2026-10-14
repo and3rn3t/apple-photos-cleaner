@@ -8,6 +8,7 @@ import sys
 from typing import Any
 
 from _common import PhotosDB, format_size, run_script
+from _schema import get_schema
 
 
 def audit_albums(
@@ -202,16 +203,12 @@ def _find_album_junction_table(cursor) -> tuple | None:
     Returns:
         Tuple of (album_column, asset_column, table_name) or None
     """
-    # Get all tables
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables = [row["name"] for row in cursor.fetchall()]
+    schema = get_schema(cursor)
 
     # Look for junction tables matching the pattern
-    for table in tables:
+    for table in schema.tables():
         if table.startswith("Z_") and "ASSETS" in table.upper():
-            # Check columns
-            cursor.execute(f"PRAGMA table_info({table})")
-            columns = [row["name"] for row in cursor.fetchall()]
+            columns = sorted(schema.columns(table))
 
             album_col = None
             asset_col = None

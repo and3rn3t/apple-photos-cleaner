@@ -18,6 +18,7 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
+from _schema import get_schema
 
 
 def analyze_shared_library(
@@ -34,11 +35,10 @@ def analyze_shared_library(
         tz_available = has_timezone_offset(cursor)
 
         # Check which columns are available
-        cursor.execute("PRAGMA table_info(ZASSET)")
-        columns = {row["name"] for row in cursor.fetchall()}
-        has_scope = "ZLIBRARYSCOPE" in columns
-        has_shared_id = "ZSHAREDLIBRARYSCOPEIDENTIFIER" in columns
-        has_active = "ZACTIVELIBRARYSCOPEPARTICIPATIONSTATE" in columns
+        schema = get_schema(conn)
+        has_scope = schema.has("asset.library_scope")
+        has_shared_id = schema.has("asset.shared_library_scope_id")
+        has_active = schema.has("asset.library_scope_participation")
 
         if not has_scope:
             return {
