@@ -14,6 +14,7 @@ release. Everything below happens before that merge.
 | Bug fix, docs, internal refactor | patch |
 | New command, flag or JSON field | minor |
 | Removed/renamed flag or JSON field, or a changed field shape | major |
+| Removing behavior that let a mutation run without informed approval | any; see the safety exception in [CONTRIBUTING.md](CONTRIBUTING.md#deprecation-policy) |
 
 Raising the Python floor is called out in the CHANGELOG even when it's a patch.
 

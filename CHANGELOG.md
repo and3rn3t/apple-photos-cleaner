@@ -11,9 +11,9 @@ release is cut.
 ### Added
 
 - `docs/threat-model.md`, linked from SECURITY.md (T0.9). It lists trust boundaries, what we
-  protect, and the mitigation and test behind each one.
+  protect, the mitigation for each threat with the code that enforces it, and the known gaps.
 - A deprecation policy in CONTRIBUTING.md (T0.16). Flags and JSON fields get one minor release
-  of warnings before removal. Safety fixes are the only exception.
+  of warnings, and removal only in a major release. Safety fixes are the only exception.
 - **Documented exit codes** (T1.9): 2 usage, 3 database not found, 4 permission
   denied (with a Full Disk Access hint), 5 schema unsupported, 10 cancelled,
   11 confirmation required. Previously every failure exited 1.
