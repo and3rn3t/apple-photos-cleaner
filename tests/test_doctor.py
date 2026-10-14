@@ -27,6 +27,9 @@ def library(tmp_path) -> Path:
     (bundle / "database").mkdir(parents=True)
     target = sqlite3.connect(bundle / "database" / "Photos.sqlite")
     create_full_test_db().backup(target)
+    # Like a real library (found on macOS 26): a spatial R*Tree the guard must never be asked to open.
+    target.execute("CREATE VIRTUAL TABLE Z_RT_Asset_boundedByRect USING rtree(Z_PK, ZMINX, ZMAXX, ZMINY, ZMAXY)")
+    target.commit()
     target.close()
     (bundle / "originals" / "A").mkdir(parents=True)
     return bundle
@@ -65,6 +68,7 @@ class TestChecks:
         assert report["ok"]
         checks = report["by_name"]
         assert [checks[n]["status"] for n in ("python", "library", "read_access", "library_size")] == ["ok"] * 4
+        assert checks["schema"]["status"] == "warn"  # unknown, but diagnosed: not a "not authorized" failure
         assert checks["automation"]["status"] == "skip"
         assert report["library"]["assets"] > 0
         assert report["degraded"] == []
@@ -123,7 +127,13 @@ class TestSchemaIdentification:
 
     @pytest.mark.parametrize(
         ("version", "macos"),
-        [(16210, "macOS 13 Ventura"), (17120, "macOS 14 Sonoma"), (18000, "macOS 15 Sequoia"), (99999, None)],
+        [
+            (16210, "macOS 13 Ventura"),
+            (17120, "macOS 14 Sonoma"),
+            (18000, "macOS 15 Sequoia"),
+            (19607, "macOS 26 Tahoe"),  # observed on a real macOS 26.7.2 library
+            (99999, None),
+        ],
     )
     def test_model_version_ranges(self, version, macos):
         assert macos_for_model_version(version) == macos
@@ -164,9 +174,12 @@ class TestSchemaIdentification:
 
     def test_shipped_fingerprints_file_is_valid(self):
         data = json.loads(doctor.FINGERPRINTS_PATH.read_text(encoding="utf-8"))
+        assert data["fingerprints"], "at least one verified fingerprint ships"
         for fingerprint, entry in data["fingerprints"].items():
             assert len(fingerprint) == 64 and int(fingerprint, 16) >= 0
             assert entry["macos"].startswith("macOS ")
+            # The recorded model version must agree with the range table.
+            assert macos_for_model_version(entry["model_version"]) == entry["macos"]
 
 
 class TestSchemaDump:
@@ -268,3 +281,16 @@ def test_doctor_imports_bootstrap_before_any_project_module():
     source = Path(doctor.__file__).read_text(encoding="utf-8")
     project_imports = [line for line in source.splitlines() if line.startswith(("import _", "from _"))]
     assert project_imports[0] == "import _bootstrap"
+
+
+def test_a_database_error_fails_one_check_not_the_report(library):
+    """A denial or query error in one check must not take down the whole diagnosis."""
+    with patch("doctor.library_stats", side_effect=sqlite3.OperationalError("not authorized")):
+        code, report = report_for("--library", str(library))
+    size = report["by_name"]["library_size"]
+    assert size["status"] == "fail"
+    assert "not authorized" in size["detail"]
+    assert "--verbose" in size["fix"]
+    assert report["by_name"]["schema"]["status"] != "fail"
+    assert [c["name"] for c in report["checks"]] == list(doctor.CHECK_NAMES)
+    assert code == ExitCode.ERROR

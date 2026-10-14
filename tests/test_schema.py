@@ -177,3 +177,34 @@ def test_photosdb_require_closes_and_raises(tmp_path):
         PhotosDB(str(path), require=("ZASSET.ZKIND",), operation="Test op"),
     ):
         pass
+
+
+class TestVirtualTables:
+    """Photos keeps an R*Tree (Z_RT_Asset_boundedByRect). Connecting to it prepares the module's own
+    INSERTs, which the read-only authorizer refuses, so the registry must never touch it."""
+
+    RTREE = "CREATE VIRTUAL TABLE Z_RT_Asset_boundedByRect USING rtree(Z_PK, ZMINX, ZMAXX, ZMINY, ZMAXY)"
+
+    @pytest.fixture
+    def guarded_conn(self, tmp_path):
+        path = tmp_path / "Photos.sqlite"
+        make_db("CREATE TABLE ZASSET (Z_PK INTEGER, ZKIND INTEGER)", self.RTREE).backup(sqlite3.connect(path))
+        conn = connect_db(str(path))
+        yield conn
+        conn.close()
+
+    def test_connecting_to_the_rtree_is_what_the_guard_refuses(self, guarded_conn):
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            guarded_conn.execute('PRAGMA table_info("Z_RT_Asset_boundedByRect")').fetchall()
+
+    def test_registry_never_connects_to_virtual_tables(self, guarded_conn):
+        schema = SchemaRegistry(guarded_conn)
+        assert schema.is_virtual("Z_RT_Asset_boundedByRect")
+        assert schema.columns("Z_RT_Asset_boundedByRect") == frozenset()
+        assert schema.columns("Z_RT_Asset_boundedByRect_node")  # its shadow tables are ordinary tables
+        assert len(schema.fingerprint()) == 64
+
+    def test_fingerprint_includes_virtual_tables(self):
+        without = SchemaRegistry(make_db("CREATE TABLE ZASSET (Z_PK INTEGER)")).fingerprint()
+        with_rtree = SchemaRegistry(make_db("CREATE TABLE ZASSET (Z_PK INTEGER)", self.RTREE)).fingerprint()
+        assert without != with_rtree

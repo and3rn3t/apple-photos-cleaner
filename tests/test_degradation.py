@@ -76,17 +76,26 @@ EXTRA_COLUMNS = [
 ]
 
 
+# Real libraries also carry a spatial R*Tree; nothing may trip the read-only guard over it.
+RTREE = "CREATE VIRTUAL TABLE Z_RT_Asset_boundedByRect USING rtree(Z_PK, ZMINX, ZMAXX, ZMINY, ZMAXY)"
+
+
 def create_rich_db() -> sqlite3.Connection:
     conn = create_full_test_db()
     for table, column in EXTRA_COLUMNS:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+    conn.execute(RTREE)
     conn.commit()
     return conn
 
 
 def fixture_columns() -> list[tuple[str, str]]:
     conn = create_rich_db()
-    tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+    tables = [
+        row[0]
+        for row in conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        if not row[1].upper().startswith("CREATE VIRTUAL TABLE") and not row[0].startswith("Z_RT_")
+    ]
     return [(table, row[1]) for table in tables for row in conn.execute(f'PRAGMA table_info("{table}")') if not row[5]]
 
 

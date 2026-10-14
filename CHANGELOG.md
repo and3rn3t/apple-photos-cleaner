@@ -38,11 +38,13 @@ release is cut.
   access to Photos.app. Each check prints pass/warn/fail and a concrete fix.
   `--format json` is for agents. SKILL.md tells agents to run it first when
   any command fails. On Python < 3.10 (stock macOS `python3` is 3.9) it prints
-  the fix instead of crashing on import.
+  the fix instead of crashing on import. With `--verbose`, the read-only guard
+  logs anything it refuses (action, table, column).
 - **Schema fingerprinting** (T1.2). The macOS release is read from Photos' own
-  data-model version (Ventura through Sequoia ranges), and an exact
+  data-model version (Ventura through macOS 26 Tahoe), and an exact
   table/column fingerprint is matched against
-  `references/schema-fingerprints.json`. An unknown schema is a warning that
+  `references/schema-fingerprints.json`, seeded with a verified macOS 26
+  fingerprint. An unknown schema is a warning that
   lists what will be degraded, never a crash. `doctor --schema-dump` prints
   table definitions only (no rows) so a new release's schema can be
   contributed.

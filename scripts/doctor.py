@@ -167,6 +167,11 @@ def check_schema(schema: SchemaRegistry) -> tuple[dict[str, Any], dict[str, Any]
     return info, check("schema", WARN, f"Unrecognized schema ({label}); some features may be degraded", contribute)
 
 
+def features_with_check(schema: SchemaRegistry) -> tuple[dict[str, Any], dict[str, Any]]:
+    features = feature_report(schema)
+    return features, check_features(features)
+
+
 def check_features(features: dict[str, Any]) -> dict[str, Any]:
     unavailable = features["unavailable_commands"]
     degraded = features["degraded_sections"]
@@ -296,11 +301,11 @@ def diagnose(path: str | None, check_automation_flag: bool = False) -> dict[str,
     if conn is not None and db_path is not None:
         try:
             schema = get_schema(conn)
-            report["schema"], schema_check = check_schema(schema)
-            report["features"] = feature_report(schema)
-            report["library"], size_check = library_stats(conn, schema)
-            checks += [schema_check, check_features(report["features"]), size_check]
-            checks.append(check_optimize_storage(db_path, report["library"].get("assets")))
+            report["schema"], schema_check = guarded("schema", lambda: check_schema(schema), (None,))
+            report["features"], features_check = guarded("features", lambda: features_with_check(schema), (None,))
+            report["library"], size_check = guarded("library_size", lambda: library_stats(conn, schema), ({},))
+            checks += [schema_check, features_check, size_check]
+            checks.append(check_optimize_storage(db_path, (report["library"] or {}).get("assets")))
         finally:
             conn.close()
     else:
@@ -312,6 +317,20 @@ def diagnose(path: str | None, check_automation_flag: bool = False) -> dict[str,
     checks.append(check_automation(check_automation_flag))
     report["ok"] = all(c["status"] != FAIL for c in checks)
     return report
+
+
+def guarded(name: str, run: Any, fallback: tuple) -> tuple[Any, dict[str, Any]]:
+    """Run one database-backed check; a database error fails that check instead of the whole report."""
+    try:
+        value, result = run()
+    except sqlite3.DatabaseError as e:
+        return fallback[0], check(
+            name,
+            FAIL,
+            f"Database error while checking {name}: {e}",
+            "Re-run with --verbose and include the output in an issue; this is a bug in the tool, not your library",
+        )
+    return value, result
 
 
 def exit_code(report: dict[str, Any]) -> ExitCode:
