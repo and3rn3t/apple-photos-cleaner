@@ -17,6 +17,7 @@ import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -385,6 +386,25 @@ class TestExitCodes:
 # ── Confirmation tokens for mutations (T1.19) ────────────────────────────────
 
 
+@pytest.fixture
+def fake_osascript(tmp_path):
+    """A stub `osascript` first on PATH for subprocess runs, counting its calls.
+
+    It answers in both the cleanup and the export result formats. The real
+    binary must never run from tests: it would drive Photos.app.
+    """
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    log = tmp_path / "osascript.log"
+    stub = bin_dir / "osascript"
+    stub.write_text(f'#!/bin/sh\necho call >> "{log}"\necho "DELETED:1 SKIPPED:0"\necho "EXPORTED:1 SKIPPED:0"\n')
+    stub.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+    assert shutil.which("osascript", path=env["PATH"]) == str(stub)
+
+    return SimpleNamespace(env=env, calls=lambda: len(log.read_text().splitlines()) if log.exists() else 0)
+
+
 class TestPlanToken:
     def test_order_of_uuids_does_not_matter(self):
         assert plan_token("c", {"a": 1}, ["u1", "u2"]) == plan_token("c", {"a": 1}, ["u2", "u1"])
@@ -457,15 +477,26 @@ class TestCleanupConfirmation:
         assert code == ExitCode.CONFIRMATION_REQUIRED
         osascript.assert_not_called()
 
-    def test_next_command_round_trips(self, cli, capsys):
+    def test_next_command_runs_verbatim(self, cli, capsys, fake_osascript):
+        """The agent flow is: copy next_command, run it. Prove that works as printed."""
         module, argv = cli
-        code, out = run_main(module, argv, capsys)
-        next_argv = shlex.split(json.loads(out)["next_command"])[1:]
-        with patch("cleanup_executor.subprocess.run") as osascript:
-            osascript.return_value = MagicMock(returncode=0, stdout="DELETED:1 SKIPPED:0", stderr="")
-            code, _ = run_main(module, next_argv, capsys)
-        assert code == ExitCode.OK
-        osascript.assert_called_once()
+        _, out = run_main(module, argv, capsys)
+        command = shlex.split(json.loads(out)["next_command"])
+        assert command[:2] == [sys.executable, str(REPO_ROOT / "scripts" / "cleanup_executor.py")]
+
+        result = subprocess.run(command, capture_output=True, text=True, cwd="/", env=fake_osascript.env, timeout=60)
+        assert result.returncode == ExitCode.OK, result.stderr
+        assert json.loads(result.stdout)["success_count"] == 1
+        assert fake_osascript.calls() == 1
+
+    @pytest.mark.parametrize("flag", ["--limit", "--batch-size"])
+    @pytest.mark.parametrize("value", ["-1", "0"])
+    def test_counts_must_be_positive(self, cli, capsys, flag, value):
+        """SQLite treats LIMIT -1 as unlimited, which would lift the per-run bound."""
+        module, argv = cli
+        with pytest.raises(SystemExit) as exc:
+            run_main(module, [*argv, flag, value], capsys)
+        assert exc.value.code == ExitCode.USAGE
 
 
 class TestExportConfirmation:
@@ -505,6 +536,19 @@ class TestExportConfirmation:
             code, _ = run_main(module, [*elsewhere, "--confirm", token], capsys)
         assert code == ExitCode.CONFIRMATION_REQUIRED
         osascript.assert_not_called()
+
+    def test_next_command_runs_verbatim(self, cli, capsys, fake_osascript):
+        module, argv = cli
+        _, out = run_main(module, [*argv, "--plan-only"], capsys)
+        command = shlex.split(json.loads(out)["next_command"])
+        assert command[:2] == [sys.executable, str(REPO_ROOT / "scripts" / "smart_export.py")]
+
+        result = subprocess.run(
+            [*command, "--format", "json"], capture_output=True, text=True, cwd="/", env=fake_osascript.env, timeout=60
+        )
+        assert result.returncode == ExitCode.OK, result.stderr
+        assert json.loads(result.stdout)["exported"] == 1
+        assert fake_osascript.calls() == 1
 
     def test_removed_yes_flag_is_rejected(self, cli, capsys):
         module, argv = cli

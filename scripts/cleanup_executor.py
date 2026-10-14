@@ -13,6 +13,7 @@ photo. See generate_trash_applescript for the matching rules.
 """
 
 import argparse
+import os
 import re
 import shlex
 import subprocess
@@ -30,6 +31,7 @@ from _common import (
     has_timezone_offset,
     output_json,
     plan_token,
+    positive_int,
     require_uuid_support,
     setup_logging,
     tz_offset_sql,
@@ -450,7 +452,8 @@ def selection_params(args: argparse.Namespace) -> dict[str, Any]:
 
 def execute_command(args: argparse.Namespace, token: str) -> str:
     """The exact command line that executes this preview."""
-    argv = ["cleanup_executor.py"]
+    # Interpreter + absolute script path: runnable as-is from any working directory.
+    argv = [sys.executable, os.path.abspath(__file__)]
     if args.db_path:
         argv += ["--db-path", args.db_path]
     elif args.library:
@@ -510,7 +513,7 @@ Categories:
     parser.add_argument(
         "--quality-threshold", type=float, default=0.3, help="Quality threshold for low_quality category (default: 0.3)"
     )
-    parser.add_argument("--limit", type=int, default=500, help="Maximum items to process (default: 500)")
+    parser.add_argument("--limit", type=positive_int, default=500, help="Maximum items to process (default: 500)")
     parser.add_argument(
         "--execute", action="store_true", help="Actually perform the cleanup (moves to Recently Deleted)"
     )
@@ -519,7 +522,7 @@ Categories:
     )
     parser.add_argument(
         "--batch-size",
-        type=int,
+        type=positive_int,
         default=MAX_BATCH_SIZE,
         help=f"Items per AppleScript batch (default: {MAX_BATCH_SIZE})",
     )

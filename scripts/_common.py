@@ -519,6 +519,17 @@ def build_asset_query(
 # ── Security helpers ─────────────────────────────────────────────────────────
 
 
+def positive_int(value: str) -> int:
+    """argparse type for counts and limits. SQLite reads a negative LIMIT as "no limit"."""
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected a positive integer, got {value!r}") from None
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {number}")
+    return number
+
+
 def validate_year(year: str | None) -> str | None:
     """Validate that a year string is a 4-digit number.
 

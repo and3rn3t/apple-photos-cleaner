@@ -401,7 +401,7 @@ Folders:
 
 Confirmation token: <token>
 To export exactly this plan, run:
-    smart_export.py --output-dir ~/Export --organize-by year_month --confirm <token>
+    /usr/bin/python3 /path/to/scripts/smart_export.py --output-dir ~/Export --organize-by year_month --confirm <token>
 ```
 
 **Mutating:** with a matching `--confirm` token this command exports. Without one it prints the plan and its token and exits with code 11. A token is bound to the exact assets, filters and `--output-dir`; if any of them changed, nothing is written and a fresh token is printed. The export drives Photos.app via AppleScript to write copies into `--output-dir`. It creates new files only — the library is never altered. Each asset is resolved by its `ZUUID`, and the resolved item's filename is re-checked before export, so the run cannot reach photos outside the plan. The final line reports `exported` and `skipped` counts; items are skipped when their id no longer resolves in Photos or the filename no longer matches.
@@ -806,7 +806,7 @@ python3 scripts/cleanup_executor.py --category CATEGORY [--execute --confirm TOK
 - `--human` — Human-readable summary
 
 **Safety:**
-- Without `--execute`, shows preview only (dry run). The preview JSON includes `confirm_token` and `next_command` (the exact command that executes it)
+- Without `--execute`, shows preview only (dry run). The preview JSON includes `confirm_token` and `next_command`: the exact command that executes it, using the same interpreter and an absolute script path, so it runs as-is from any directory
 - `--execute` needs `--confirm <token>` from that preview. If the token is missing, or the candidates or options changed since the preview, nothing runs: the fresh preview and token are printed and the exit code is 11
 - No interactive prompt; piping `yes` does nothing
 - Items are moved to Recently Deleted (not permanently deleted)

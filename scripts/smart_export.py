@@ -321,7 +321,8 @@ def export_params(args: argparse.Namespace) -> dict[str, Any]:
 
 def export_command(args: argparse.Namespace, token: str) -> str:
     """The exact command line that performs this plan's export."""
-    argv = ["smart_export.py"]
+    # Interpreter + absolute script path: runnable as-is from any working directory.
+    argv = [sys.executable, os.path.abspath(__file__)]
     if args.db_path:
         argv += ["--db-path", args.db_path]
     elif args.library:

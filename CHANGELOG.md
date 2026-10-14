@@ -21,6 +21,11 @@ release is cut.
   - `smart_export` without `--plan-only` no longer exports by itself; it needs
     `--confirm <token>`. `--yes` is removed (exit 2).
 
+  - `next_command` uses the running interpreter and the script's absolute
+    path, so an agent can run it verbatim from any directory.
+  - `--limit` and `--batch-size` must be positive. SQLite reads `LIMIT -1` as
+    "no limit", which bypassed the per-run bound.
+
   These ship without a deprecation period under the safety exception in
   CONTRIBUTING.md.
 
