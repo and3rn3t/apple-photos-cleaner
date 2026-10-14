@@ -298,10 +298,13 @@ class TestReadOnlyGuard:
         conn.close()
 
     def test_reads_are_allowed(self, db_file):
+        # Use PRAGMA table_info(...), never the pragma_table_info() table-valued
+        # function: SQLite < ~3.45 (e.g. 3.40 in python.org's 3.10) authorizes
+        # internal sqlite_master UPDATEs when building that virtual table, which
+        # the guard rightly denies.
         conn = connect_db(str(db_file))
         assert conn.execute("SELECT count(*) FROM ZASSET").fetchone()[0] > 0
         assert conn.execute("PRAGMA table_info(ZASSET)").fetchall()
-        assert conn.execute("SELECT name FROM pragma_table_info('ZASSET')").fetchall()
         assert conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         recursive = "WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r WHERE x < 3) SELECT max(x) FROM r"
         assert conn.execute(recursive).fetchone()[0] == 3

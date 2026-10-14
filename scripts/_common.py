@@ -148,6 +148,8 @@ _READ_ACTIONS = frozenset(
         getattr(sqlite3, "SQLITE_RECURSIVE", 33),  # module constant added in Python 3.11
     }
 )
+# Use these as PRAGMA statements. The pragma_table_info() table-valued form trips
+# the guard on older SQLite, which authorizes internal sqlite_master UPDATEs for it.
 _READ_ONLY_PRAGMAS = frozenset({"table_info", "table_xinfo"})
 
 
