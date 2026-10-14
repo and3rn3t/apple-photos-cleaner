@@ -32,6 +32,7 @@ def script_args(script: str, tmp_path: Path) -> list[str]:
     return {
         "cleanup_executor": ["--category", "all_screenshots"],
         "smart_export": ["--output-dir", str(tmp_path / "export"), "--plan-only", "--format", "json"],
+        "doctor": ["--format", "json"],
     }.get(script, [])
 
 

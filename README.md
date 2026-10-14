@@ -57,6 +57,7 @@ Every script lives in `scripts/` and outputs **JSON** by default (for piping / A
 | `similarity_finder.py` | Detect visually similar photos using quality feature vectors |
 | `seasonal_highlights.py` | Curate best photos per season with favorite boosting |
 | `face_quality.py` | Score face/portrait quality using Apple's ML face attributes |
+| `doctor.py` | Diagnose setup: library location, Full Disk Access, Automation, macOS schema, with a fix per check |
 
 ### Examples
 

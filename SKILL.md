@@ -33,6 +33,7 @@ Apple Photos is great at organizing and syncing photos, but it's not so great at
 - **Similarity Finder** — Detect visually similar photos using computed quality feature vectors
 - **Seasonal Highlights** — Curate the best photos per season using quality scores and favorites
 - **Face Quality Scoring** — Rank face photos per person: find best/worst portraits
+- **Doctor** — Diagnose setup problems (library location, Full Disk Access, Automation, macOS schema) with a fix for each
 
 **Safety:** Every analysis command is read-only — reports are built from read-only SQLite queries and nothing is ever written back to the Photos database. Two commands are **mutating** and drive Photos.app through AppleScript automation: `smart_export.py` writes exported copies to a directory you choose, and `cleanup_executor.py` moves items to Recently Deleted. Both preview by default. Executing requires `--confirm <token>` with the token printed by the preview, so only the exact set the user was shown can run. See [Safety & Permissions](#safety--permissions).
 
@@ -69,6 +70,8 @@ Use when users mention:
 
 All scripts work standalone. The Photos database is automatically located at:
 `~/Pictures/Photos Library.photoslibrary/database/Photos.sqlite`
+
+**If any command fails** (nonzero exit), run `python3 scripts/doctor.py --format json` before retrying. It says what's wrong (library not found, missing Full Disk Access, unsupported macOS schema) and gives the exact fix to relay to the user.
 
 **Basic workflow:**
 1. Run `library_analysis.py` to get overview
@@ -963,6 +966,30 @@ python3 scripts/face_quality.py [--person NAME] [--top 10] [--human]
 - Overall library face quality average
 - Most photographed person, highest quality person
 
+### 21. Doctor
+
+Diagnose why a command can't run. Each check reports pass/warn/fail plus a concrete fix.
+
+```bash
+python3 scripts/doctor.py [--library PATH] [--format human|json] [--check-automation]
+python3 scripts/doctor.py --schema-dump > schema.sql
+```
+
+**Options:**
+- `--library PATH` / `--db-path PATH` — Library bundle or database to check (default: the standard location)
+- `--format human|json` — Output format (default: human). Agents should use `json`
+- `--check-automation` — Also test AppleScript access to Photos.app. It can launch Photos and show a permission prompt, so it's opt-in
+- `--schema-dump` — Print the database's table definitions (no rows, no metadata) for a bug report about a new macOS version
+
+**Checks:** `python`, `library` (found where), `read_access` (Full Disk Access), `schema` (macOS version from Photos' model version, known-fingerprint match), `features` (which commands, sections and options this library's schema can't support, from every script's declared columns), `library_size`, `optimize_storage` (heuristic: are originals on this Mac?), `automation` (only with `--check-automation`).
+
+**Exit codes:** 0 when nothing failed (warnings are fine), 3 library not found, 4 no read access, 1 for other failures (e.g. Automation denied).
+
+**Usage in Conversation:**
+
+**User:** "Why isn't this working?"
+**AI:** *Runs doctor.py --format json, then relays each failing check's `fix`, e.g. how to grant Full Disk Access*
+
 ---
 
 ## Database Schema Reference
@@ -1268,6 +1295,9 @@ Every command exits with one of these codes, so branch on the code rather than p
 | 11 | Confirmation required | A mutating command ran without a matching `--confirm` token. Nothing was changed. Show the user the fresh preview on stdout and ask again |
 
 ## Troubleshooting
+
+**Anything failing?**  
+→ Run `python3 scripts/doctor.py` first. It checks each prerequisite and prints the fix
 
 **"Database not found"** (exit 3)  
 → Specify path with `--library ~/Path/To/Photos Library.photoslibrary`
