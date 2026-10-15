@@ -11,6 +11,7 @@ from _common import (
     PhotosDB,
     build_asset_query,
     coredata_to_local,
+    display_name,
     format_size,
     get_quality_score,
     has_timezone_offset,
@@ -18,7 +19,7 @@ from _common import (
     run_script,
     validate_year,
 )
-from _schema import FILE_SIZE, QUALITY_SCORES, Degradation, get_schema
+from _schema import FILE_SIZE, ORIGINAL_FILENAME, QUALITY_SCORES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -34,6 +35,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
 )
 # Ranking blends whichever quality scores exist; with none, nothing qualifies.
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     "quality": QUALITY_SCORES,
     "score_breakdown": tuple(
         f"ZCOMPUTEDASSETATTRIBUTES.{c}"
@@ -73,6 +75,7 @@ def find_best_photos(
         tz_available = has_timezone_offset(cursor)
         schema = get_schema(conn)
         degraded = Degradation(schema)
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         for section, names in OPTIONAL_COLUMNS.items():
             degraded.check(section, *names)
 
@@ -159,6 +162,7 @@ def find_best_photos(
                     {
                         "id": row["Z_PK"],
                         "filename": row["ZFILENAME"],
+                        "original_filename": row["original_filename"],
                         "created": created.isoformat() if created else None,
                         "size": size,
                         "size_formatted": format_size(size),
@@ -221,7 +225,7 @@ def format_summary(data: dict[str, Any]) -> str:
         lines.append(f"Top {len(top)} Photos:")
         for i, photo in enumerate(top[:20], 1):
             fav = " ★" if photo["is_favorite"] else " 💎"
-            lines.append(f"  {i:>3}. {photo['filename']}")
+            lines.append(f"  {i:>3}. {display_name(photo)}")
             lines.append(
                 f"       Q:{photo['quality_score']:.3f} | {photo['size_formatted']} | {photo['dimensions']}{fav}"
             )

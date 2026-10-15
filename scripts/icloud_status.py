@@ -13,12 +13,14 @@ from _common import (
     PhotosDB,
     _safe_col,
     coredata_to_local,
+    display_name,
     format_size,
     has_timezone_offset,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
 )
-from _schema import FILE_SIZE, Degradation, get_schema
+from _schema import FILE_SIZE, ORIGINAL_FILENAME, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -30,6 +32,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     *FILE_SIZE,
 )
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     "icloud": ("asset.cloud_local_state",),
     "ownership": ("asset.cloud_is_my_asset",),
     "downloadable": ("asset.cloud_is_downloadable",),
@@ -55,11 +58,13 @@ def analyze_icloud_status(
     assets that might have sync issues.
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="iCloud status") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check available columns
         degraded = Degradation(get_schema(conn))
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         has_cloud_state = degraded.check("icloud", *OPTIONAL_COLUMNS["icloud"])
         has_cloud_asset = degraded.check("ownership", *OPTIONAL_COLUMNS["ownership"])
         has_downloadable = degraded.check("downloadable", *OPTIONAL_COLUMNS["downloadable"])
@@ -80,6 +85,7 @@ def analyze_icloud_status(
         select_cols = [
             "a.Z_PK",
             "a.ZFILENAME",
+            name_col,
             "a.ZDATECREATED",
             "a.ZKIND",
             "a.ZFAVORITE",
@@ -161,6 +167,7 @@ def analyze_icloud_status(
                         {
                             "id": rd["Z_PK"],
                             "filename": rd["ZFILENAME"],
+                            "original_filename": rd["original_filename"],
                             "created": created.isoformat() if created else None,
                             "size": size,
                             "size_formatted": format_size(size),
@@ -266,7 +273,7 @@ def format_summary(data: dict[str, Any]) -> str:
         lines.append(f"Large local-only items (>10 MB): {s['large_local_only_count']}")
         for item in data["local_only_large"][:10]:
             fav = "⭐" if item["is_favorite"] else "  "
-            lines.append(f"  {fav} {item['filename']:40s} {item['size_formatted']:>10}  ({item['kind']})")
+            lines.append(f"  {fav} {display_name(item):40s} {item['size_formatted']:>10}  ({item['kind']})")
 
     return "\n".join(lines)
 

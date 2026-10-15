@@ -13,15 +13,17 @@ from _common import (
     PhotosDB,
     computed_scores_sql,
     coredata_to_local,
+    display_name,
     format_size,
     get_quality_score,
     has_timezone_offset,
     local_datetime_sql,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
     validate_year,
 )
-from _schema import FILE_SIZE, Degradation, get_schema
+from _schema import FILE_SIZE, ORIGINAL_FILENAME, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -49,6 +51,7 @@ SEASONAL_SCORE_COLUMNS = (
     "ZWEIGHTEDSCENECLASSIFICATIONSCORE",
 )
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     "scores": ("ZCOMPUTEDASSETATTRIBUTES.ZASSET", *(f"ZCOMPUTEDASSETATTRIBUTES.{c}" for c in SEASONAL_SCORE_COLUMNS)),
     "titles": ("ZADDITIONALASSETATTRIBUTES.ZTITLE",),
 }
@@ -107,10 +110,12 @@ def get_seasonal_highlights(
     month_to_season = MONTH_TO_SEASON_SH if southern_hemisphere else MONTH_TO_SEASON_NH
 
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Seasonal highlights") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
         registry = get_schema(conn)
         degraded = Degradation(registry)
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         degraded.check("scores", *OPTIONAL_COLUMNS["scores"])
         degraded.check("titles", *OPTIONAL_COLUMNS["titles"])
         score_terms, score_join = computed_scores_sql(registry, *SEASONAL_SCORE_COLUMNS)
@@ -124,7 +129,7 @@ def get_seasonal_highlights(
 
         query = f"""
             SELECT
-                a.Z_PK, a.ZFILENAME, a.ZDATECREATED, a.ZFAVORITE,
+                a.Z_PK, a.ZFILENAME, {name_col}, a.ZDATECREATED, a.ZFAVORITE,
                 a.ZWIDTH, a.ZHEIGHT, a.ZLATITUDE, a.ZLONGITUDE,
                 aa.ZORIGINALFILESIZE, {registry.select("ZADDITIONALASSETATTRIBUTES.ZTITLE", "aa")},
                 {tz_offset_sql(tz_available)} AS tz_offset,
@@ -174,6 +179,7 @@ def get_seasonal_highlights(
             photo = {
                 "id": rd["Z_PK"],
                 "filename": rd["ZFILENAME"],
+                "original_filename": rd["original_filename"],
                 "title": rd.get("ZTITLE"),
                 "created": created.isoformat(),
                 "year": yr,
@@ -253,11 +259,11 @@ def format_summary(data: dict[str, Any]) -> str:
 
         if info["best_photo"]:
             bp = info["best_photo"]
-            lines.append(f"   ⭐ Best: {bp['filename']} ({bp['created'][:10]})")
+            lines.append(f"   ⭐ Best: {display_name(bp)} ({bp['created'][:10]})")
 
         for p in info["highlights"][:5]:
             fav = "⭐" if p["is_favorite"] else "  "
-            lines.append(f"   {fav} {p['filename']:40s} {p['created'][:10]}  Q={p['combined_score']:.3f}")
+            lines.append(f"   {fav} {display_name(p):40s} {p['created'][:10]}  Q={p['combined_score']:.3f}")
         lines.append("")
 
     if data["distribution"]:

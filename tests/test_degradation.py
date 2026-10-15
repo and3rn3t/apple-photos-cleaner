@@ -33,6 +33,8 @@ def script_args(script: str, tmp_path: Path) -> list[str]:
         "cleanup_executor": ["--category", "all_screenshots"],
         "smart_export": ["--output-dir", str(tmp_path / "export"), "--plan-only", "--format", "json"],
         "doctor": ["--format", "json"],
+        # Search mode lists files (and so original names); inventory mode only counts scenes.
+        "scene_search": ["--search", "beach"],
     }.get(script, [])
 
 
@@ -52,6 +54,7 @@ EXTRA_COLUMNS = [
     ("ZASSET", "ZPLAYBACKSTYLE INTEGER DEFAULT 3"),
     ("ZASSET", "ZLIBRARYSCOPE INTEGER DEFAULT 0"),
     ("ZASSET", "ZSHAREDLIBRARYSCOPEIDENTIFIER INTEGER"),
+    ("ZADDITIONALASSETATTRIBUTES", "ZORIGINALFILENAME TEXT DEFAULT 'IMG_0001.HEIC'"),
     ("ZDETECTEDFACE", "ZQUALITYMEASURE REAL DEFAULT 0.6"),
     ("ZDETECTEDFACE", "ZBLURSCORE REAL DEFAULT 0.1"),
     ("ZDETECTEDFACE", "ZSMILESCORE REAL DEFAULT 0.5"),
@@ -104,10 +107,10 @@ def physical(names) -> set[str]:
     return {f"{table}.{column}" for name in names for table, columns in [resolve(name)] for column in columns}
 
 
-def run(script: str, db: Path, tmp_path: Path) -> tuple[int, str]:
+def run(script: str, db: Path, tmp_path: Path, extra: list[str] | None = None) -> tuple[int, str]:
     module = importlib.import_module(script)
     out = io.StringIO()
-    argv = [script, "--db-path", str(db), *script_args(script, tmp_path)]
+    argv = [script, "--db-path", str(db), *script_args(script, tmp_path), *(extra or [])]
     with (
         patch.object(sys, "argv", argv),
         contextlib.redirect_stdout(out),
@@ -246,3 +249,40 @@ def test_missing_catalog_face_count_is_null_not_zero(tmp_path):
     assert result["people"], "fixture should yield people"
     assert all(person["face_count"] is None for person in result["people"])
     assert "catalog_face_count" in {entry["section"] for entry in result["degraded"]}
+
+
+# Arguments / data that make a script list at least one file, so an empty result can't pass vacuously.
+ITEM_PRODUCING: dict[str, tuple[list[str], str]] = {
+    "on_this_day": (["--date", "2025-03-03"], ""),
+    "people_analyzer": (["--min-photos", "1"], ""),
+    # Two photos with identical timestamp and dimensions form a timestamp_dimensions group.
+    "duplicate_finder": (
+        [],
+        "UPDATE ZASSET SET ZDATECREATED = (SELECT ZDATECREATED FROM ZASSET WHERE Z_PK = 1), "
+        "ZWIDTH = (SELECT ZWIDTH FROM ZASSET WHERE Z_PK = 1), ZHEIGHT = (SELECT ZHEIGHT FROM ZASSET WHERE Z_PK = 1), "
+        "ZKIND = 0, ZDUPLICATEASSETVISIBILITYSTATE = 0 WHERE Z_PK IN (1, 2);",
+    ),
+    # A large local-only (unsynced) item is listed by name.
+    "icloud_status": (
+        [],
+        "UPDATE ZASSET SET ZCLOUDLOCALSTATE = 0 WHERE Z_PK = 1;"
+        "UPDATE ZADDITIONALASSETATTRIBUTES SET ZORIGINALFILESIZE = 50000000 WHERE ZASSET = 1;",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "script", [s for s in SCRIPTS if "original_filenames" in importlib.import_module(s).OPTIONAL_COLUMNS]
+)
+def test_declared_sections_reach_the_output(script, tmp_path):
+    """A declared section must affect what's shown: warning about data the output never contains misleads."""
+    db = db_without(tmp_path, None, None)
+    args, sql = ITEM_PRODUCING.get(script, ([], ""))
+    if sql:
+        conn = sqlite3.connect(db)
+        conn.executescript(sql)
+        conn.commit()
+        conn.close()
+    code, out = run(script, db, tmp_path, extra=args)
+    assert code == ExitCode.OK
+    assert '"original_filename"' in out, f"{script} declares original_filenames but never outputs it"

@@ -59,6 +59,7 @@ Multi-command recipes (cleanup assessment, freeing storage, year in review, peop
 
 - **JSON on stdout by default**, for you to parse. `--human` prints a readable summary instead, `-o FILE` writes the JSON to a file, and `--verbose` adds debug logging. `smart_export` and `doctor` use `--format human|json`, and `timeline_recap` has `--narrative`.
 - **Partial results (`degraded`):** Apple adds and renames database columns between macOS versions. Every JSON result has a `degraded` list, normally empty. An entry such as `{"section": "burst_leftovers", "reason": "missing column(s): ZASSET.ZAVALANCHEKIND"}` means that section is `null` or was computed from the data that exists. Tell the user that part isn't available on their macOS version, and never present a `null` as zero.
+- **Names:** show people `original_filename` (e.g. `IMG_1234.HEIC`). `filename` is Photos' internal storage name, a UUID on current macOS; it's only an identifier.
 - **In conversation, synthesize; don't dump.** Be specific ("287 screenshots older than 30 days, 2.1 GB"), mention savings, turn timelines and memories into a short story, and aggregate rather than echo raw GPS coordinates or long name lists.
 
 ## Mutations

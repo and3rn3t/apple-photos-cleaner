@@ -36,7 +36,10 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     "ZASSET.ZTRASHEDSTATE",
     "ZADDITIONALASSETATTRIBUTES.ZASSET",
 )
-OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"people": FACES, "scenes": SCENES}
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "people": FACES,
+    "scenes": SCENES,
+}
 
 
 def generate_timeline(

@@ -28,9 +28,11 @@ from _common import (
     PhotosDB,
     build_identifier_lists,
     coredata_to_local,
+    display_name,
     format_size,
     handle_cli_error,
     has_timezone_offset,
+    original_filename_sql,
     output_json,
     plan_token,
     positive_int,
@@ -38,7 +40,7 @@ from _common import (
     setup_logging,
     tz_offset_sql,
 )
-from _schema import BURSTS, FILE_SIZE, QUALITY_SCORES, get_schema
+from _schema import BURSTS, FILE_SIZE, ORIGINAL_FILENAME, QUALITY_SCORES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -58,7 +60,7 @@ CATEGORY_COLUMNS: dict[str, tuple[str, ...]] = {
     "low_quality": ("ZASSET.ZKIND", "ZASSET.ZISDETECTEDSCREENSHOT", *QUALITY_SCORES),
     "duplicates": ("ZASSET.ZDUPLICATEASSETVISIBILITYSTATE", "ZASSET.ZFAVORITE"),
 }
-OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"original_filenames": ORIGINAL_FILENAME}
 
 # Maximum items per AppleScript batch (Photos.app can be slow with large batches)
 MAX_BATCH_SIZE = 50
@@ -92,6 +94,9 @@ def get_cleanup_candidates(
         Cleanup candidates dictionary
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Cleanup") as conn:
+        name_col = original_filename_sql(get_schema(conn))
+        degraded = Degradation(get_schema(conn))
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
         require_uuid_support(cursor, "Cleanup")
@@ -120,7 +125,7 @@ def get_cleanup_candidates(
             cursor.execute(
                 f"""
                 SELECT
-                    a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
+                    a.Z_PK, a.ZUUID, a.ZFILENAME, {name_col}, a.ZDATECREATED,
                     aa.ZORIGINALFILESIZE,
                     {tz_offset_sql(tz_available)} AS tz_offset
                 FROM ZASSET a
@@ -139,6 +144,7 @@ def get_cleanup_candidates(
                         "id": row["Z_PK"],
                         "uuid": row["ZUUID"],
                         "filename": row["ZFILENAME"],
+                        "original_filename": row["original_filename"],
                         "created": created.isoformat() if created else None,
                         "size": row["ZORIGINALFILESIZE"] or 0,
                         "size_formatted": format_size(row["ZORIGINALFILESIZE"] or 0),
@@ -150,7 +156,7 @@ def get_cleanup_candidates(
             cursor.execute(
                 f"""
                 SELECT
-                    a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
+                    a.Z_PK, a.ZUUID, a.ZFILENAME, {name_col}, a.ZDATECREATED,
                     aa.ZORIGINALFILESIZE,
                     {tz_offset_sql(tz_available)} AS tz_offset
                 FROM ZASSET a
@@ -171,6 +177,7 @@ def get_cleanup_candidates(
                         "id": row["Z_PK"],
                         "uuid": row["ZUUID"],
                         "filename": row["ZFILENAME"],
+                        "original_filename": row["original_filename"],
                         "created": created.isoformat() if created else None,
                         "size": row["ZORIGINALFILESIZE"] or 0,
                         "size_formatted": format_size(row["ZORIGINALFILESIZE"] or 0),
@@ -205,6 +212,7 @@ def get_cleanup_candidates(
                             "id": row["Z_PK"],
                             "uuid": row["ZUUID"],
                             "filename": row["ZFILENAME"],
+                            "original_filename": row["original_filename"],
                             "created": created.isoformat() if created else None,
                             "size": row["ZORIGINALFILESIZE"] or 0,
                             "size_formatted": format_size(row["ZORIGINALFILESIZE"] or 0),
@@ -219,7 +227,7 @@ def get_cleanup_candidates(
             cursor.execute(
                 f"""
                 SELECT
-                    a.Z_PK, a.ZUUID, a.ZFILENAME, a.ZDATECREATED,
+                    a.Z_PK, a.ZUUID, a.ZFILENAME, {name_col}, a.ZDATECREATED,
                     a.ZFAVORITE,
                     aa.ZORIGINALFILESIZE,
                     {tz_offset_sql(tz_available)} AS tz_offset,
@@ -242,6 +250,7 @@ def get_cleanup_candidates(
                         "id": row["Z_PK"],
                         "uuid": row["ZUUID"],
                         "filename": row["ZFILENAME"],
+                        "original_filename": row["original_filename"],
                         "created": created.isoformat() if created else None,
                         "size": row["ZORIGINALFILESIZE"] or 0,
                         "size_formatted": format_size(row["ZORIGINALFILESIZE"] or 0),
@@ -252,8 +261,8 @@ def get_cleanup_candidates(
         total_size = sum(c["size"] for c in candidates)
 
         return {
-            # Categories never degrade (missing columns refuse with exit 5), so this stays empty.
-            "degraded": [],
+            # Categories refuse with exit 5 rather than degrade; only display names can be degraded.
+            "degraded": degraded.entries,
             "candidates": candidates,
             "summary": {
                 "category": category,
@@ -445,7 +454,7 @@ def format_summary(data: dict[str, Any]) -> str:
 
         lines.append("Items to clean up:")
         for c in data["candidates"][:20]:
-            lines.append(f"  {c['filename']} ({c['size_formatted']})")
+            lines.append(f"  {display_name(c)} ({c['size_formatted']})")
             if c.get("quality_score") is not None:
                 lines.append(f"    Quality: {c['quality_score']:.3f}")
 

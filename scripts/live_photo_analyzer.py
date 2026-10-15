@@ -13,15 +13,17 @@ from _common import (
     _safe_col,
     computed_scores_sql,
     coredata_to_local,
+    display_name,
     format_size,
     get_quality_score,
     has_timezone_offset,
     local_datetime_sql,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
     validate_year,
 )
-from _schema import FILE_SIZE, QUALITY_SCORES, Degradation, get_schema
+from _schema import FILE_SIZE, ORIGINAL_FILENAME, QUALITY_SCORES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -35,6 +37,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     *FILE_SIZE,
 )
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     "live_photos": ("asset.kind_subtype", "asset.playback_style"),
     "quality": QUALITY_SCORES,
 }
@@ -66,12 +69,14 @@ def analyze_live_photos(
     Live Photos that are rarely played (candidates for conversion).
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Live Photo analysis") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check which columns exist
         schema = get_schema(conn)
         degraded = Degradation(schema)
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         degraded.check("live_photos", *OPTIONAL_COLUMNS["live_photos"])
         degraded.check("quality", *OPTIONAL_COLUMNS["quality"])
         has_subtype = schema.has("asset.kind_subtype")
@@ -99,6 +104,7 @@ def analyze_live_photos(
         select_cols = [
             "a.Z_PK",
             "a.ZFILENAME",
+            name_col,
             "a.ZDATECREATED",
             "a.ZKIND",
             "a.ZFAVORITE",
@@ -166,6 +172,7 @@ def analyze_live_photos(
                     {
                         "id": rd["Z_PK"],
                         "filename": rd["ZFILENAME"],
+                        "original_filename": rd["original_filename"],
                         "created": created.isoformat() if created else None,
                         "size": size,
                         "size_formatted": format_size(size),
@@ -263,7 +270,7 @@ def format_summary(data: dict[str, Any]) -> str:
         lines.append("Largest Live Photos:")
         for p in data["live_photos"][:10]:
             fav = "⭐" if p["is_favorite"] else "  "
-            lines.append(f"  {fav} {p['filename']:40s} {p['size_formatted']:>10} ({p['playback_style']})")
+            lines.append(f"  {fav} {display_name(p):40s} {p['size_formatted']:>10} ({p['playback_style']})")
 
     return "\n".join(lines)
 

@@ -15,15 +15,17 @@ from _common import (
     computed_scores_sql,
     coredata_to_local,
     detect_face_schema,
+    display_name,
     format_size,
     get_quality_score,
     has_timezone_offset,
     is_screenshot,
     local_datetime_sql,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
 )
-from _schema import FACES, FILE_SIZE, QUALITY_SCORES, SCENES, Degradation, get_schema
+from _schema import FACES, FILE_SIZE, ORIGINAL_FILENAME, QUALITY_SCORES, SCENES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -38,6 +40,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     *FILE_SIZE,
 )
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     "quality": QUALITY_SCORES,
     "people": FACES,
     "scenes": SCENES,
@@ -69,10 +72,12 @@ def on_this_day(
     day = target.day
 
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="On This Day") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
         registry = get_schema(conn)
         degraded = Degradation(registry)
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         degraded.check("quality", *OPTIONAL_COLUMNS["quality"])
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
         has_scenes = degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
@@ -110,6 +115,7 @@ def on_this_day(
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
+                {name_col},
                 a.ZDATECREATED,
                 a.ZKIND,
                 a.ZFAVORITE,
@@ -147,6 +153,7 @@ def on_this_day(
             photo = {
                 "id": row["Z_PK"],
                 "filename": row["ZFILENAME"],
+                "original_filename": row["original_filename"],
                 "created": created.isoformat(),
                 "year": created.year,
                 "years_ago": years_ago,
@@ -294,7 +301,7 @@ def format_summary(data: dict[str, Any]) -> str:
         if year_data["best_photo"]:
             bp = year_data["best_photo"]
             q_str = f" Q:{bp['quality_score']:.2f}" if bp["quality_score"] else ""
-            lines.append(f"   📸 Best: {bp['filename']}{q_str}")
+            lines.append(f"   📸 Best: {display_name(bp)}{q_str}")
 
         lines.append("")
 

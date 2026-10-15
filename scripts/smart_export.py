@@ -31,6 +31,7 @@ from _common import (
     handle_cli_error,
     has_timezone_offset,
     local_datetime_sql,
+    original_filename_sql,
     output_json,
     plan_token,
     require_uuid_support,
@@ -38,7 +39,7 @@ from _common import (
     setup_logging,
     tz_offset_sql,
 )
-from _schema import FACES, FILE_SIZE, SchemaUnsupportedError, album_junction, get_schema
+from _schema import FACES, FILE_SIZE, ORIGINAL_FILENAME, Degradation, SchemaUnsupportedError, album_junction, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -56,7 +57,7 @@ FILTER_COLUMNS: dict[str, tuple[str, ...]] = {
     "person": FACES,
     "album": ("ZGENERICALBUM.ZTITLE",),
 }
-OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"original_filenames": ORIGINAL_FILENAME}
 
 # Counters reported back by the generated AppleScript.
 _RESULT_RE = re.compile(r"EXPORTED:(\d+)\s+SKIPPED:(\d+)")
@@ -87,6 +88,9 @@ def generate_export_plan(
         Export plan dictionary
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Export") as conn:
+        name_col = original_filename_sql(get_schema(conn))
+        degraded = Degradation(get_schema(conn))
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         cursor = conn.cursor()
         require_uuid_support(cursor, "Export")
         face_schema = detect_face_schema(cursor)
@@ -120,6 +124,7 @@ def generate_export_plan(
                 a.Z_PK,
                 a.ZUUID,
                 a.ZFILENAME,
+                {name_col},
                 a.ZDATECREATED,
                 a.ZLATITUDE,
                 a.ZLONGITUDE,
@@ -203,6 +208,7 @@ def generate_export_plan(
                     "id": asset_id,
                     "uuid": row["ZUUID"],
                     "filename": filename,
+                    "original_filename": row["original_filename"],
                     "created": created.isoformat() if created else None,
                     "size": size,
                 }
@@ -218,8 +224,8 @@ def generate_export_plan(
                 "person_name": person_name,
                 "album_name": album_name,
             },
-            # Filters never degrade (they refuse with exit 5), so this stays empty.
-            "degraded": [],
+            # Filters refuse with exit 5 rather than degrade; only display names can be degraded.
+            "degraded": degraded.entries,
             "folders": {},
             "summary": {
                 "total_photos": total_count,

@@ -572,6 +572,20 @@ def format_degraded(result: dict) -> str:
     return "\n".join(lines)
 
 
+def original_filename_sql(schema: SchemaRegistry) -> str:
+    """SELECT term for the asset's original filename as ``original_filename`` (NULL when absent).
+
+    Needs ``LEFT JOIN ZADDITIONALASSETATTRIBUTES aa``. Display only: ``filename`` (ZASSET.ZFILENAME)
+    stays the identity the AppleScript cross-check compares against.
+    """
+    return schema.select("ZADDITIONALASSETATTRIBUTES.ZORIGINALFILENAME", "aa", as_="original_filename")
+
+
+def display_name(item: dict) -> str:
+    """The name to show a person: the original filename when known, else Photos' storage name."""
+    return item.get("original_filename") or item.get("filename") or ""
+
+
 # Query builders
 def build_asset_query(
     where_clauses: list[str] | None = None,
@@ -613,7 +627,8 @@ def build_asset_query(
             aa.ZORIGINALWIDTH,
             """
             + tz_offset_sql(tz_offset_available)
-            + " AS tz_offset"
+            + " AS tz_offset,\n            "
+            + (original_filename_sql(schema) if schema else "NULL AS original_filename")
         )
 
     if join_computed:
