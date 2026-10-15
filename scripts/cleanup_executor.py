@@ -22,6 +22,8 @@ from typing import Any
 
 from _common import (
     LOCAL_IDENTIFIER_SUFFIX,
+    SCREEN_RECORDING_SQL,
+    SCREENSHOT_SQL,
     ExitCode,
     PhotosDB,
     build_identifier_lists,
@@ -49,8 +51,9 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
 # A mutating command never acts on partial data: a category whose columns are missing
 # refuses (exit 5) instead of degrading.
 CATEGORY_COLUMNS: dict[str, tuple[str, ...]] = {
-    "old_screenshots": ("ZASSET.ZISDETECTEDSCREENSHOT",),
-    "all_screenshots": ("ZASSET.ZISDETECTEDSCREENSHOT",),
+    "old_screenshots": ("ZASSET.ZISDETECTEDSCREENSHOT", "ZASSET.ZKIND"),
+    "all_screenshots": ("ZASSET.ZISDETECTEDSCREENSHOT", "ZASSET.ZKIND"),
+    "screen_recordings": ("ZASSET.ZISDETECTEDSCREENSHOT", "ZASSET.ZKIND"),
     "burst_leftovers": BURSTS,
     "low_quality": ("ZASSET.ZKIND", "ZASSET.ZISDETECTEDSCREENSHOT", *QUALITY_SCORES),
     "duplicates": ("ZASSET.ZDUPLICATEASSETVISIBILITYSTATE", "ZASSET.ZFAVORITE"),
@@ -97,12 +100,14 @@ def get_cleanup_candidates(
 
         candidates = []
 
-        if category in ("old_screenshots", "all_screenshots"):
+        if category in ("old_screenshots", "all_screenshots", "screen_recordings"):
             from datetime import datetime, timedelta
 
             from _common import datetime_to_coredata
 
-            where = "a.ZTRASHEDSTATE != 1 AND a.ZISDETECTEDSCREENSHOT = 1"
+            # Screenshots are photos only; screen recordings carry the same flag but are videos.
+            kind = SCREEN_RECORDING_SQL if category == "screen_recordings" else SCREENSHOT_SQL
+            where = f"a.ZTRASHEDSTATE != 1 AND {kind}"
             params: list[Any] = []
 
             if category == "old_screenshots":
@@ -514,11 +519,12 @@ Examples:
   %(prog)s --category old_screenshots --execute --confirm <token>
 
 Categories:
-  old_screenshots   - Screenshots older than --screenshot-age days
-  all_screenshots   - All screenshots
+  old_screenshots   - Screenshots older than --screenshot-age days (photos only)
+  all_screenshots   - All screenshots (photos only)
   burst_leftovers   - Unpicked burst photos
   low_quality       - Photos below --quality-threshold
   duplicates        - Apple-detected duplicates (non-favorites only)
+  screen_recordings - Screen recordings (videos Photos flags like screenshots)
 
 ⚠️  SAFETY: --execute requires --confirm with the token from the preview. If the
     candidates changed since the preview, nothing runs and a fresh token is
@@ -531,7 +537,14 @@ Categories:
     parser.add_argument(
         "--category",
         required=True,
-        choices=["old_screenshots", "all_screenshots", "burst_leftovers", "low_quality", "duplicates"],
+        choices=[
+            "old_screenshots",
+            "all_screenshots",
+            "screen_recordings",
+            "burst_leftovers",
+            "low_quality",
+            "duplicates",
+        ],
         help="Category of items to clean up",
     )
     parser.add_argument("--screenshot-age", type=int, default=30, help="Screenshot age in days (default: 30)")

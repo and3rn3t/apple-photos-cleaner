@@ -7,6 +7,8 @@ import sys
 from typing import Any
 
 from _common import (
+    SCREEN_RECORDING_SQL,
+    SCREENSHOT_SQL,
     PhotosDB,
     coredata_to_local,
     format_size,
@@ -132,21 +134,25 @@ def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
                 }
             )
 
-        # Screenshots vs non-screenshots
-        cursor.execute("""
+        # Screenshots vs screen recordings vs everything else
+        cursor.execute(f"""
             SELECT
-                a.ZISDETECTEDSCREENSHOT,
+                CASE
+                    WHEN {SCREENSHOT_SQL} THEN 'screenshots'
+                    WHEN {SCREEN_RECORDING_SQL} THEN 'screen_recordings'
+                    ELSE 'photos_videos'
+                END AS source,
                 COUNT(*) as count,
                 SUM(aa.ZORIGINALFILESIZE) as total_bytes
             FROM ZASSET a
             LEFT JOIN ZADDITIONALASSETATTRIBUTES aa ON a.Z_PK = aa.ZASSET
             WHERE a.ZTRASHEDSTATE != 1
-            GROUP BY a.ZISDETECTEDSCREENSHOT
+            GROUP BY source
         """)
 
         by_source = {}
         for row in cursor.fetchall():
-            source = "screenshots" if row["ZISDETECTEDSCREENSHOT"] else "photos_videos"
+            source = row["source"]
             total_bytes = row["total_bytes"] or 0
             by_source[source] = {
                 "count": row["count"],

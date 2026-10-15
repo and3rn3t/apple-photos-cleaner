@@ -357,9 +357,22 @@ def get_asset_kind_name(kind: int) -> str:
     return kinds.get(kind, f"unknown_{kind}")
 
 
-def is_screenshot(row: sqlite3.Row) -> bool:
-    """Check if an asset is a screenshot."""
-    return bool(row["ZISDETECTEDSCREENSHOT"])
+# Photos sets ZISDETECTEDSCREENSHOT on screen recordings too; ZKIND tells them apart
+# (0 = photo, 1 = video). Use these, never the bare flag, so "screenshots" never means videos.
+SCREENSHOT_SQL = "a.ZISDETECTEDSCREENSHOT = 1 AND a.ZKIND = 0"
+SCREEN_RECORDING_SQL = "a.ZISDETECTEDSCREENSHOT = 1 AND a.ZKIND = 1"
+
+
+def is_screenshot(row: sqlite3.Row | dict) -> bool:
+    """A screenshot: flagged by Photos and a photo. Rows without ZKIND fall back to the flag."""
+    if not row["ZISDETECTEDSCREENSHOT"]:
+        return False
+    return "ZKIND" not in row.keys() or row["ZKIND"] == 0  # noqa: SIM118 - `in` on a sqlite3.Row checks values
+
+
+def is_screen_recording(row: sqlite3.Row | dict) -> bool:
+    """A screen recording: carries the screenshot flag but is a video."""
+    return bool(row["ZISDETECTEDSCREENSHOT"]) and row["ZKIND"] == 1
 
 
 def is_burst(row) -> bool:
