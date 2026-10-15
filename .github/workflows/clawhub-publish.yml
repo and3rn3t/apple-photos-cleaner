@@ -99,8 +99,10 @@ jobs:
             --dry-run --json
 
       - name: Publish
+        id: publish
         if: steps.check.outputs.needed == 'true' && !inputs.dry_run
         run: |
+          set -o pipefail  # a failed publish must fail the step, not be masked by `tee`
           clawhub skill publish . \
             --slug apple-photos-cleaner \
             --version "${{ steps.manifest.outputs.version }}" \
@@ -109,7 +111,11 @@ jobs:
             --source-repo "${{ github.repository }}" \
             --source-commit "${{ github.sha }}" \
             --source-ref "${{ github.ref }}" \
-            --json
+            --json | tee "$RUNNER_TEMP/publish.json"
+          # Captured outside the published folder (`.`) so it can never end up in the bundle.
+          # The registry may queue a version (e.g. for its security scan) instead of publishing it at once.
+          status=$(python3 -c "import json, os; d=json.load(open(os.path.join(os.environ['RUNNER_TEMP'], 'publish.json'))); print(d.get('publicationStatus') or d.get('status') or 'unknown')")
+          echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - name: Summarise
         if: always()
@@ -123,7 +129,13 @@ jobs:
               echo "- No publish — the registry already has this version."
             elif [ "${{ inputs.dry_run }}" = "true" ]; then
               echo "- Dry run: validated but **not** published."
-            else
+            elif [ "${{ steps.publish.outcome }}" != "success" ]; then
+              echo "- ❌ Publish **failed**; see the Publish step log."
+            elif [ "${{ steps.publish.outputs.status }}" = "published" ]; then
               echo "- Published to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner)."
+            elif [ "${{ steps.publish.outputs.status }}" = "pending" ]; then
+              echo "- Submitted to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner); publication is **pending** (registry scan). Confirm later with \`clawhub inspect apple-photos-cleaner\`."
+            else
+              echo "- Submitted to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner), but publication is **not confirmed** (status: \`${{ steps.publish.outputs.status }}\`). Check with \`clawhub inspect apple-photos-cleaner\`."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
