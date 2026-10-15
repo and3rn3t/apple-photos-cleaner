@@ -104,3 +104,12 @@ def test_storage_analyzer_sources(db_with_recording):
     assert by_source["screen_recordings"]["count"] == 1
     assert by_source["screen_recordings"]["total_bytes"] == 25_000_000
     assert by_source["screenshots"]["count"] == 1
+
+
+def test_storage_human_output_labels_each_source(db_with_recording):
+    from storage_analyzer import analyze_storage, format_summary
+
+    text = format_summary(analyze_storage(db_path=db_with_recording))
+    section = text.split("By Source:")[1].split("\n\n")[0]
+    labels = [line.split(":")[0].strip() for line in section.strip().splitlines()]
+    assert sorted(labels) == ["Photos & Videos", "Screen Recordings", "Screenshots"]

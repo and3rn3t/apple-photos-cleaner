@@ -238,6 +238,13 @@ def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
         }
 
 
+SOURCE_LABELS = {
+    "screenshots": "Screenshots",
+    "screen_recordings": "Screen Recordings",
+    "photos_videos": "Photos & Videos",
+}
+
+
 def format_summary(analysis: dict[str, Any]) -> str:
     """Format storage analysis as human-readable summary."""
     lines = []
@@ -259,7 +266,7 @@ def format_summary(analysis: dict[str, Any]) -> str:
     if analysis["by_source"]:
         lines.append("By Source:")
         for source, data in analysis["by_source"].items():
-            source_name = "Screenshots" if source == "screenshots" else "Photos & Videos"
+            source_name = SOURCE_LABELS.get(source, source)
             lines.append(f"  {source_name}: {data['total_formatted']} ({data['percent']:.1f}%)")
         lines.append("")
 
