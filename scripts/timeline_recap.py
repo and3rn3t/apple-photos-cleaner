@@ -19,12 +19,11 @@ from _common import (
     handle_cli_error,
     has_timezone_offset,
     local_datetime_sql,
-    original_filename_sql,
     output_json,
     setup_logging,
     tz_offset_sql,
 )
-from _schema import FACES, ORIGINAL_FILENAME, SCENES, Degradation, get_schema
+from _schema import FACES, SCENES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -38,7 +37,6 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     "ZADDITIONALASSETATTRIBUTES.ZASSET",
 )
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
-    "original_filenames": ORIGINAL_FILENAME,
     "people": FACES,
     "scenes": SCENES,
 }
@@ -63,11 +61,9 @@ def generate_timeline(
         Timeline dictionary
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Timeline recap") as conn:
-        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
         degraded = Degradation(get_schema(conn))
-        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
         has_scenes = degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
         tz_available = has_timezone_offset(cursor)
@@ -90,7 +86,6 @@ def generate_timeline(
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
-                {name_col},
                 a.ZDATECREATED,
                 a.ZKIND,
                 a.ZLATITUDE,
@@ -113,7 +108,6 @@ def generate_timeline(
                     {
                         "id": row["Z_PK"],
                         "filename": row["ZFILENAME"],
-                        "original_filename": row["original_filename"],
                         "created": created,
                         "kind": "photo" if row["ZKIND"] == 0 else "video",
                         "latitude": row["ZLATITUDE"],
