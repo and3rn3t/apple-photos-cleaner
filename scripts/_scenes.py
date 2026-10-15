@@ -23,12 +23,26 @@ import uuid
 from collections import Counter
 from collections.abc import Iterable
 
-from _schema import SCENES, get_schema
+from _schema import SCENES, SchemaRegistry, get_schema
 
 LABEL_CATEGORY = 1500
 SYNONYM_CATEGORY = 1501
 DATABASE = "database"
 SEARCH_INDEX = "search_index"
+# Every index column the queries below use; an index missing any of them is not a usable source.
+INDEX_COLUMNS = (
+    "groups.category",
+    "groups.owning_groupid",
+    "groups.content_string",
+    "ga.groupid",
+    "ga.assetid",
+    "assets.uuid_0",
+    "assets.uuid_1",
+)
+CONFIDENCE_LIMITATION = (
+    "scene labels come from Photos' search index, which has no per-photo confidence: "
+    "results are newest-first and --min-confidence is ignored"
+)
 # SQLite's default limit on bound parameters is 999 in older builds.
 _CHUNK = 900
 
@@ -78,7 +92,7 @@ class SearchIndex:
         self.conn.row_factory = None
         # The registry never connects to the index's FTS5 table (its tokenizer is Apple-private).
         schema = get_schema(self.conn)
-        self.valid = all(schema.has_table(table) for table in ("groups", "ga", "assets"))
+        self.valid = all(schema.has_column(*name.split(".")) for name in INDEX_COLUMNS)
 
     def __enter__(self) -> "SearchIndex":
         return self
@@ -155,6 +169,13 @@ def scene_source(conn: sqlite3.Connection) -> str | None:
         return DATABASE
     if search_index_available(getattr(conn, "db_file", None)):
         return SEARCH_INDEX
+    return None
+
+
+def confidence_limited(schema: SchemaRegistry, db_path: str | None) -> str | None:
+    """Why scene confidence is unavailable when the search index is the scene source, else None."""
+    if not all(schema.has(name) for name in SCENES) and search_index_available(db_path):
+        return CONFIDENCE_LIMITATION
     return None
 
 

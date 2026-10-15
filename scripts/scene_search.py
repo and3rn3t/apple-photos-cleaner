@@ -21,7 +21,15 @@ from _common import (
     tz_offset_sql,
     validate_year,
 )
-from _scenes import DATABASE, SEARCH_INDEX, SearchIndex, scene_source, search_index_available
+from _scenes import (
+    CONFIDENCE_LIMITATION,
+    DATABASE,
+    SEARCH_INDEX,
+    SearchIndex,
+    confidence_limited,
+    scene_source,
+    search_index_available,
+)
 from _schema import FILE_SIZE, ORIGINAL_FILENAME, SCENES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
@@ -43,6 +51,8 @@ OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 # A section whose columns are missing is still available when this source exists (doctor uses it).
 ALTERNATE_SOURCES = {"scenes": search_index_available}
+# A section that stays limited because of which source was chosen (doctor reports the reason).
+SOURCE_LIMITATIONS = {"scene_confidence": confidence_limited}
 
 
 def search_scenes(
@@ -89,11 +99,7 @@ def search_scenes(
         if source == DATABASE:
             degraded.check("scene_confidence", *OPTIONAL_COLUMNS["scene_confidence"])
         else:
-            degraded.note(
-                "scene_confidence",
-                "scene labels come from Photos' search index, which has no per-photo confidence: "
-                "results are unranked and --min-confidence is ignored",
-            )
+            degraded.note("scene_confidence", CONFIDENCE_LIMITATION)
         if search_term:
             return _search_by_scene(ctx, search_term, top_n)
         return _generate_inventory(ctx)
@@ -287,13 +293,14 @@ def _search_by_scene_in_index(ctx: SceneQuery, search_term: str, top_n: int) -> 
     for start in range(0, len(uuids), 900):
         chunk = uuids[start : start + 900]
         rows += _asset_rows(ctx, f"upper(a.ZUUID) IN ({','.join('?' * len(chunk))})", chunk)
-    rows.sort(key=lambda row: row["ZDATECREATED"] or 0, reverse=True)
+    # Newest first; undated photos last (reverse=True puts the False "is dated" key at the end).
+    rows.sort(key=lambda row: (row["ZDATECREATED"] is not None, row["ZDATECREATED"] or 0), reverse=True)
     results = [_result(row, label_of[row["ZUUID"].upper()], None) for row in rows[:top_n]]
 
     related_scenes: list[dict] = []
     if results:
         with SearchIndex(ctx.index_path) as index:
-            counts = index.labels_for(row["ZUUID"] for row in rows[:100])
+            counts = index.labels_for(row["ZUUID"] for row in rows[: min(len(results), 100)])
         related_scenes = [{"scene": label, "count": n} for label, n in counts.most_common() if label not in matches][
             :10
         ]
@@ -428,6 +435,9 @@ def format_summary(data: dict[str, Any]) -> str:
     lines.append("🏷️  SCENE / CONTENT SEARCH")
     lines.append("=" * 50)
     lines.append("")
+    if "error" in data:
+        lines.append(f"⚠️  {data['error']}")
+        return "\n".join(lines)
 
     if data["mode"] == "search":
         summary = data["summary"]

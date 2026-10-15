@@ -133,12 +133,15 @@ def feature_report(schema: SchemaRegistry, db_path: str | None = None) -> dict[s
         if missing := schema.missing(*module.REQUIRED_COLUMNS):
             unavailable.append({"command": command, "missing": missing})
         alternates = getattr(module, "ALTERNATE_SOURCES", {})
+        limitations = getattr(module, "SOURCE_LIMITATIONS", {})
         for section, names in module.OPTIONAL_COLUMNS.items():
-            if not (missing := schema.missing(*names)):
-                continue
-            if section in alternates and alternates[section](db_path):
-                continue
-            degraded.append({"command": command, "section": section, "missing": missing})
+            if missing := schema.missing(*names):
+                if section in alternates and alternates[section](db_path):
+                    continue
+                degraded.append({"command": command, "section": section, "missing": missing})
+            elif section in limitations and (reason := limitations[section](schema, db_path)):
+                # Columns present, but the source the command will use can't supply this section.
+                degraded.append({"command": command, "section": section, "missing": [], "reason": reason})
         for kind in ("CATEGORY_COLUMNS", "FILTER_COLUMNS"):
             for option, names in getattr(module, kind, {}).items():
                 if missing := schema.missing(*names):

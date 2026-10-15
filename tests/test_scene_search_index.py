@@ -194,3 +194,44 @@ def test_doctor_counts_the_index_as_a_scene_source(tmp_path):
     assert ("scene_search", "scenes") in {
         (d["command"], d["section"]) for d in without["features"]["degraded_sections"]
     }
+
+
+class TestReviewFixes:
+    def test_index_missing_a_query_column_is_not_a_source(self, tmp_path):
+        bundle = make_library(tmp_path)
+        psi = sqlite3.connect(bundle / "database" / "search" / "psi.sqlite")
+        psi.execute("ALTER TABLE groups DROP COLUMN owning_groupid")
+        psi.commit()
+        psi.close()
+        assert not search_index_available(str(bundle / "database" / "Photos.sqlite"))
+
+    def test_doctor_reports_the_confidence_limitation(self, tmp_path):
+        _, report = run("doctor", "--library", str(make_library(tmp_path)), "--format", "json")
+        entry = next(d for d in report["features"]["degraded_sections"] if d["section"] == "scene_confidence")
+        assert entry["command"] == "scene_search"
+        assert "no per-photo confidence" in entry["reason"]
+
+    def test_human_output_shows_the_error(self, tmp_path):
+        from scene_search import format_summary, search_scenes
+
+        lib = make_library(tmp_path, index=False)
+        text = format_summary(search_scenes(db_path=str(lib / "database" / "Photos.sqlite")))
+        assert "Scene labels aren't available" in text
+        assert "Library total" not in text
+
+    def test_undated_photos_sort_last(self, tmp_path):
+        lib = make_library(tmp_path)
+        conn = sqlite3.connect(lib / "database" / "Photos.sqlite")
+        # Photo 1 predates the Core Data epoch (2001), so its timestamp is negative; photo 2 is undated.
+        conn.execute("UPDATE ZASSET SET ZDATECREATED = -86400 * 365 WHERE Z_PK = 1")
+        conn.execute("UPDATE ZASSET SET ZDATECREATED = NULL WHERE Z_PK = 2")
+        conn.commit()
+        conn.close()
+        _, result = run("scene_search", "--library", str(lib), "--search", "outdoor", "--top", "1")
+        assert [r["id"] for r in result["results"]] == [1]
+
+    def test_related_scenes_only_come_from_shown_results(self, tmp_path):
+        # "outdoor" matches photos 1 and 2; --top 1 shows only photo 2 (newest), which has no other label.
+        _, result = run("scene_search", "--library", str(make_library(tmp_path)), "--search", "outdoor", "--top", "1")
+        assert [r["id"] for r in result["results"]] == [2]
+        assert result["related_scenes"] == []
