@@ -34,6 +34,7 @@ In priority order:
 | A bug writes to `Photos.sqlite` | Connections open with `?mode=ro` | `connect_db` in [`scripts/_common.py`](../scripts/_common.py) |
 | A misopened connection (wrong URI, future refactor) still allows writes | A SQLite authorizer (`_deny_writes`) allows only reads and the `table_info` pragmas. Every other statement fails to prepare (T1.20) | `connect_db`; `TestReadOnlyGuard` |
 | A lock collides with Photos.app | `timeout=5` busy wait; read-only means we never take a write lock | `connect_db` |
+| A second Photos database (the search index `database/search/psi.sqlite`, read for scene labels on macOS 26) is written or its private FTS5 tokenizer invoked | Opened with the same `connect_db` (`mode=ro` + authorizer); the schema registry never connects to its virtual tables | `_scenes.SearchIndex`; `test_scene_search_index.py` |
 
 ### 2. SQL built from user input
 

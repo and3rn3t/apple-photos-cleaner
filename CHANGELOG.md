@@ -8,6 +8,24 @@ release is cut.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Scene search works on macOS 26** (#35). Its `ZSCENECLASSIFICATION` keys
+  scenes by number and stores no names, so `scene_search` and the scene
+  sections of `on_this_day`/`timeline_recap` were unavailable. Labels are now
+  read from Photos' own search index (`database/search/psi.sqlite`, opened
+  read-only through the same write guard), including Apple's synonyms
+  ("seaside" finds "Beach"). That index has no per-photo confidence, so results
+  are newest-first with `confidence: null` and a `scene_confidence` entry in
+  `degraded`. Older libraries keep using `ZSCENECLASSIFICATION` unchanged. The
+  layout was confirmed on a real macOS 26.7.2 library.
+
+### Added
+
+- Scene results carry `source` (`database` or `search_index`). `doctor` no
+  longer lists scene features as unavailable when the search index covers
+  them.
+
 ## [1.2.0] - 2026-10-15
 
 Fixes from checking 1.1.0 against a real macOS 26 library. Screenshot cleanup

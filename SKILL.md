@@ -39,7 +39,7 @@ All are `python3 scripts/<command>.py`. Sensitivity of the output: 🔴 high, �
 | `best_photos` | Highest-quality photos; `--hidden-gems` for great unfavorited ones | 🟠 | [best_photos.md](references/commands/best_photos.md) |
 | `people_analyzer` | Who appears, how often, together, over time; best photos per person | 🔴 | [people_analyzer.md](references/commands/people_analyzer.md) |
 | `location_mapper` | Location clusters, trips, offline place names | 🔴 | [location_mapper.md](references/commands/location_mapper.md) |
-| `scene_search` | Search by detected content (beach, dog…) or a content inventory. Not on macOS 26 | 🟠 | [scene_search.md](references/commands/scene_search.md) |
+| `scene_search` | Search by detected content (beach, dog…) or a content inventory | 🟠 | [scene_search.md](references/commands/scene_search.md) |
 | `photo_habits` | When you shoot: hour, weekday, streaks, seasons | 🟠 | [photo_habits.md](references/commands/photo_habits.md) |
 | `on_this_day` | This date in past years (`--window` widens it) | 🟠 | [on_this_day.md](references/commands/on_this_day.md) |
 | `album_auditor` | Orphan photos, empty albums, overlapping albums | 🟡 | [album_auditor.md](references/commands/album_auditor.md) |
@@ -92,7 +92,7 @@ Reports describe identifiable people (the subjects of the photos), not just the 
 ## Limitations
 
 - **Dates are local capture time.** Years, days and hours, plus `--year`/`--start-date`/`--end-date`, use each photo's recorded time zone, falling back to this Mac's.
-- **Schema varies by macOS version.** Missing columns degrade sections (`degraded`) or, for a command's core columns, exit 5. Scene search isn't available on macOS 26. `doctor.py` lists what a library supports.
+- **Schema varies by macOS version.** Missing columns degrade sections (`degraded`) or, for a command's core columns, exit 5. On macOS 26, scene labels come from Photos' search index, which has no per-photo confidence. `doctor.py` lists what a library supports.
 - **Offline place names** cover about 100 major cities; elsewhere coordinates are shown.
 - **Similarity** compares Apple's computed scores, not pixels, and is O(n²), so it is bounded by `--limit`.
 - **Shared Library** needs a macOS 13+ library. **Exports** need Photos.app; with "Optimize Mac Storage", iCloud-only originals must be downloaded first.

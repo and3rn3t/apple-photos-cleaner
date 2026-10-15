@@ -2,10 +2,13 @@
 
 Search photos by ML-detected scene classifications (beach, sunset, dog, food, etc.) or generate a complete content inventory.
 
-> **Not available on macOS 26 (Tahoe).** Its Photos database keys scenes by numeric
-> `ZSCENEIDENTIFIER` and has no `ZSCENENAME` or `ZSCENECLASSIFICATION.ZASSET`, so this command
-> exits 5 and the scene sections of `on_this_day` and `timeline_recap` are `degraded`. Run
-> `doctor.py` to see what your library supports.
+> **Where labels come from.** Older libraries store a scene name on each classification row.
+> macOS 26 (Tahoe) doesn't, so labels are read from Photos' own search index
+> (`database/search/psi.sqlite`, read-only), and searches also match Apple's synonyms (e.g.
+> "seaside" finds "Beach"). The index has **no per-photo confidence**: results are newest-first,
+> `confidence` is `null`, `--min-confidence` is ignored, and `degraded` says so. The result's
+> `source` is `database` or `search_index`. If neither is present, the result is an `error`
+> with `scenes` in `degraded`.
 
 ```bash
 python3 scripts/scene_search.py [--search TERM] [--min-confidence N] [--human]

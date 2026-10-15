@@ -121,16 +121,27 @@ def script_modules() -> list[Any]:
     return [importlib.import_module(name) for name in names]
 
 
-def feature_report(schema: SchemaRegistry) -> dict[str, Any]:
-    """Check every script's declared contract against this library."""
+def feature_report(schema: SchemaRegistry, db_path: str | None = None) -> dict[str, Any]:
+    """Check every script's declared contract against this library.
+
+    A section listed in a script's ALTERNATE_SOURCES is still available when that source exists
+    (e.g. scene labels from the search index on macOS 26), so it isn't reported as degraded.
+    """
     unavailable, degraded, refused = [], [], []
     for module in script_modules():
         command = module.__name__
         if missing := schema.missing(*module.REQUIRED_COLUMNS):
             unavailable.append({"command": command, "missing": missing})
+        alternates = getattr(module, "ALTERNATE_SOURCES", {})
+        limitations = getattr(module, "SOURCE_LIMITATIONS", {})
         for section, names in module.OPTIONAL_COLUMNS.items():
             if missing := schema.missing(*names):
+                if section in alternates and alternates[section](db_path):
+                    continue
                 degraded.append({"command": command, "section": section, "missing": missing})
+            elif section in limitations and (reason := limitations[section](schema, db_path)):
+                # Columns present, but the source the command will use can't supply this section.
+                degraded.append({"command": command, "section": section, "missing": [], "reason": reason})
         for kind in ("CATEGORY_COLUMNS", "FILTER_COLUMNS"):
             for option, names in getattr(module, kind, {}).items():
                 if missing := schema.missing(*names):
@@ -167,8 +178,8 @@ def check_schema(schema: SchemaRegistry) -> tuple[dict[str, Any], dict[str, Any]
     return info, check("schema", WARN, f"Unrecognized schema ({label}); some features may be degraded", contribute)
 
 
-def features_with_check(schema: SchemaRegistry) -> tuple[dict[str, Any], dict[str, Any]]:
-    features = feature_report(schema)
+def features_with_check(schema: SchemaRegistry, db_path: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    features = feature_report(schema, db_path)
     return features, check_features(features)
 
 
@@ -302,7 +313,9 @@ def diagnose(path: str | None, check_automation_flag: bool = False) -> dict[str,
         try:
             schema = get_schema(conn)
             report["schema"], schema_check = guarded("schema", lambda: check_schema(schema), (None,))
-            report["features"], features_check = guarded("features", lambda: features_with_check(schema), (None,))
+            report["features"], features_check = guarded(
+                "features", lambda: features_with_check(schema, db_path), (None,)
+            )
             report["library"], size_check = guarded("library_size", lambda: library_stats(conn, schema), ({},))
             checks += [schema_check, features_check, size_check]
             checks.append(check_optimize_storage(db_path, (report["library"] or {}).get("assets")))

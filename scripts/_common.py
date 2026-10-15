@@ -136,6 +136,8 @@ def connect_db(db_path: str) -> sqlite3.Connection:
         ) from e
     # Second line of defence behind mode=ro: refuse anything but reads at prepare time.
     conn.set_authorizer(_deny_writes)
+    # Remembered so companion files (the search index next to Photos.sqlite) can be found.
+    conn.db_file = os.path.abspath(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
