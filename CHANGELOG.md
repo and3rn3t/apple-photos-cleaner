@@ -64,6 +64,15 @@ release is cut.
 
 ### Changed
 
+- **SKILL.md is now a router** (T1.23): about 1,320 lines down to about 120. It
+  keeps what each command is for, when to use it, the output contract, the
+  mutation flow, permissions, privacy, limitations and exit codes. Each
+  command's flags, example output and conversation examples moved verbatim to
+  `references/commands/<command>.md`, and the recipes to
+  `references/workflows.md`. A test caps SKILL.md at 250 lines and requires a
+  linked reference file per command. The flag and default audits now read the
+  reference files.
+
 - **Graceful degradation** (T1.4). Each script declares `REQUIRED_COLUMNS` and
   `OPTIONAL_COLUMNS`. A missing required column is a clean exit 5 naming it,
   instead of a raw "no such column" crash. A missing optional column (computed
