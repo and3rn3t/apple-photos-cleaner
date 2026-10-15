@@ -229,6 +229,7 @@ class Degradation:
     def __init__(self, schema: SchemaRegistry):
         self._schema = schema
         self._missing: dict[str, list[str]] = {}
+        self._notes: dict[str, str] = {}
 
     def check(self, section: str, *names: str) -> bool:
         """True when every column is present; otherwise record *section* as degraded and return False."""
@@ -238,12 +239,16 @@ class Degradation:
             recorded.extend(column for column in missing if column not in recorded)
         return not missing
 
+    def note(self, section: str, reason: str) -> None:
+        """Record *section* as degraded for a reason other than a missing column."""
+        self._notes.setdefault(section, reason)
+
     @property
     def entries(self) -> list[dict[str, str]]:
         return [
             {"section": section, "reason": f"missing column(s): {', '.join(columns)}"}
             for section, columns in self._missing.items()
-        ]
+        ] + [{"section": section, "reason": reason} for section, reason in self._notes.items()]
 
 
 def album_junction(schema: SchemaRegistry) -> tuple[str, str, str] | None:
@@ -270,6 +275,7 @@ class PhotosConnection(sqlite3.Connection):
     """Connection that caches its SchemaRegistry (plain connections can't hold attributes or weakrefs)."""
 
     schema_registry: SchemaRegistry | None = None
+    db_file: str | None = None
 
 
 def get_schema(conn_or_cursor: sqlite3.Connection | sqlite3.Cursor) -> SchemaRegistry:

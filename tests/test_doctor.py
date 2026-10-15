@@ -101,12 +101,12 @@ class TestChecks:
 
     def test_unavailable_command_is_a_warning_not_a_failure(self, library):
         conn = sqlite3.connect(library / "database" / "Photos.sqlite")
-        conn.execute("ALTER TABLE ZSCENECLASSIFICATION DROP COLUMN ZCONFIDENCE")
+        conn.execute("ALTER TABLE ZGENERICALBUM DROP COLUMN ZTITLE")
         conn.commit()
         conn.close()
         code, report = report_for("--library", str(library))
         assert code == ExitCode.OK
-        assert {"command": "scene_search", "missing": ["ZSCENECLASSIFICATION.ZCONFIDENCE"]} in report["features"][
+        assert {"command": "album_auditor", "missing": ["ZGENERICALBUM.ZTITLE"]} in report["features"][
             "unavailable_commands"
         ]
 

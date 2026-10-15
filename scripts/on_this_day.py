@@ -25,6 +25,7 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
+from _scenes import SEARCH_INDEX, scene_source, search_index_available, top_labels_for_assets
 from _schema import FACES, FILE_SIZE, ORIGINAL_FILENAME, QUALITY_SCORES, SCENES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
@@ -45,6 +46,8 @@ OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
     "people": FACES,
     "scenes": SCENES,
 }
+# A section whose columns are missing is still available when this source exists (doctor uses it).
+ALTERNATE_SOURCES = {"scenes": search_index_available}
 
 
 def on_this_day(
@@ -80,7 +83,11 @@ def on_this_day(
         degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         degraded.check("quality", *OPTIONAL_COLUMNS["quality"])
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
-        has_scenes = degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
+        # Scene names come from ZSCENECLASSIFICATION or, on macOS 26, Photos' search index (see _scenes).
+        scenes_from = scene_source(conn)
+        has_scenes = scenes_from is not None
+        if scenes_from is None:
+            degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
         score_terms, score_join = computed_scores_sql(registry, *QUALITY_SCORE_COLUMNS)
         tz_available = has_timezone_offset(cursor)
         local_dt = local_datetime_sql(tz_available)
@@ -199,7 +206,9 @@ def on_this_day(
 
             # Get scenes (None when this library has no scene data)
             scenes: list[dict[str, Any]] | None = [] if has_scenes else None
-            if photo_ids and has_scenes:
+            if photo_ids and scenes_from == SEARCH_INDEX:
+                scenes = top_labels_for_assets(conn, photo_ids)
+            elif photo_ids and has_scenes:
                 cursor.execute(
                     f"""
                     SELECT sc.ZSCENENAME, COUNT(*) as count

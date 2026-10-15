@@ -23,6 +23,7 @@ from _common import (
     setup_logging,
     tz_offset_sql,
 )
+from _scenes import SEARCH_INDEX, scene_source, search_index_available, top_labels_for_assets
 from _schema import FACES, SCENES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
@@ -40,6 +41,8 @@ OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
     "people": FACES,
     "scenes": SCENES,
 }
+# A section whose columns are missing is still available when this source exists (doctor uses it).
+ALTERNATE_SOURCES = {"scenes": search_index_available}
 
 
 def generate_timeline(
@@ -65,7 +68,11 @@ def generate_timeline(
         schema = detect_face_schema(cursor)
         degraded = Degradation(get_schema(conn))
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
-        has_scenes = degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
+        # Scene names come from ZSCENECLASSIFICATION or, on macOS 26, Photos' search index (see _scenes).
+        scenes_from = scene_source(conn)
+        has_scenes = scenes_from is not None
+        if scenes_from is None:
+            degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
         tz_available = has_timezone_offset(cursor)
         local_dt = local_datetime_sql(tz_available)
 
@@ -193,7 +200,9 @@ def generate_timeline(
                 event["people"] = [] if has_faces else None
 
             # Get scene classifications (None when this library has none)
-            if photo_ids and has_scenes:
+            if photo_ids and scenes_from == SEARCH_INDEX:
+                event["scenes"] = top_labels_for_assets(conn, photo_ids)
+            elif photo_ids and has_scenes:
                 cursor.execute(
                     f"""
                     SELECT DISTINCT sc.ZSCENENAME, COUNT(*) as count
