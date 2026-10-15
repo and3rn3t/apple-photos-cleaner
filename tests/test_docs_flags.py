@@ -21,7 +21,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
-DOCS = ["SKILL.md", "README.md"]
+COMMAND_DOCS = sorted(p.relative_to(REPO_ROOT).as_posix() for p in (REPO_ROOT / "references" / "commands").glob("*.md"))
+DOCS = ["SKILL.md", "README.md", "references/workflows.md", *COMMAND_DOCS]
 
 SCRIPT_NAMES = sorted(p.stem for p in SCRIPTS_DIR.glob("[a-z]*.py"))
 FLAG = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]*)")
@@ -97,14 +98,13 @@ def test_every_mentioned_flag_exists_somewhere(doc):
 
 def test_extractor_finds_documented_usage():
     """Guard the guard: if parsing silently finds nothing, the tests above pass vacuously."""
-    flags = documented_script_flags("SKILL.md")
+    flags = [flag for doc in DOCS for flag in documented_script_flags(doc)]
     assert len(flags) > 40
     assert ("cleanup_executor", "--execute") in {(s, f) for _, s, f in flags}
 
 
 # ── Documented defaults ──────────────────────────────────────────────────────
 
-SECTION = re.compile(r"^### \d+\. ")
 OPTION_DEFAULT = re.compile(r"^- `(--[a-z][a-z0-9-]*)[^`]*` — .*?\(default: ([^,)]+)")
 
 
@@ -131,16 +131,14 @@ def cli_defaults(script: str) -> dict[str, object]:
     }
 
 
-def documented_defaults() -> list[tuple[int, str, str, str]]:
-    """(line, script, flag, documented default) from SKILL.md's per-command option lists."""
-    found, script = [], None
-    for lineno, line in enumerate((REPO_ROOT / "SKILL.md").read_text(encoding="utf-8").splitlines(), start=1):
-        if SECTION.match(line):
-            script = None
-        elif script is None and (ref := SCRIPT_REF.search(line)):
-            script = ref[1]
-        if script and (match := OPTION_DEFAULT.match(line)):
-            found.append((lineno, script, match[1], match[2].strip()))
+def documented_defaults() -> list[tuple[str, str, str, str]]:
+    """(location, script, flag, documented default) from each references/commands/<script>.md option list."""
+    found = []
+    for doc in COMMAND_DOCS:
+        script = Path(doc).stem
+        for lineno, line in enumerate((REPO_ROOT / doc).read_text(encoding="utf-8").splitlines(), start=1):
+            if match := OPTION_DEFAULT.match(line):
+                found.append((f"{doc}:{lineno}", script, match[1], match[2].strip()))
     return found
 
 
@@ -159,8 +157,8 @@ def test_documented_defaults_match_argparse():
     documented = documented_defaults()
     assert len(documented) >= 20, "default extraction found too little; the parser above is broken"
     wrong = [
-        f"SKILL.md:{lineno}: {script}.py {flag} documented {doc!r}, actual {cli_defaults(script).get(flag)!r}"
-        for lineno, script, flag, doc in documented
+        f"{where}: {script}.py {flag} documented {doc!r}, actual {cli_defaults(script).get(flag)!r}"
+        for where, script, flag, doc in documented
         if not same_default(doc, cli_defaults(script).get(flag))
     ]
     assert not wrong, "Documented defaults that don't match the code:\n" + "\n".join(wrong)

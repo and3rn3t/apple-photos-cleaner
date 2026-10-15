@@ -186,3 +186,35 @@ class TestChangelog:
         assert re.search(rf"^\[{re.escape(version)}\]: https://", changelog, re.MULTILINE), (
             f"CHANGELOG.md needs a '[{version}]: https://...' compare link at the bottom"
         )
+
+
+class TestProgressiveDisclosure:
+    """SKILL.md is loaded on every trigger, so it stays a router (ROADMAP T1.23); detail lives in references/."""
+
+    MAX_LINES = 250
+    SCRIPTS = sorted(p.stem for p in (REPO_ROOT / "scripts").glob("[a-z]*.py"))
+
+    def test_skill_md_stays_small(self) -> None:
+        lines = SKILL_PATH.read_text(encoding="utf-8").count("\n")
+        assert lines <= self.MAX_LINES, f"SKILL.md is {lines} lines; move detail to references/commands/"
+
+    @pytest.mark.parametrize("script", SCRIPTS)
+    def test_every_command_has_a_linked_reference(self, script: str) -> None:
+        reference = REPO_ROOT / "references" / "commands" / f"{script}.md"
+        assert reference.is_file(), f"missing {reference.relative_to(REPO_ROOT)}"
+        assert f"](references/commands/{script}.md)" in SKILL_PATH.read_text(encoding="utf-8")
+        assert f"scripts/{script}.py" in reference.read_text(encoding="utf-8")
+
+    def test_no_orphan_references(self) -> None:
+        documented = {p.stem for p in (REPO_ROOT / "references" / "commands").glob("*.md")}
+        assert documented == set(self.SCRIPTS)
+
+    def test_relative_links_resolve(self) -> None:
+        docs = [SKILL_PATH, *sorted((REPO_ROOT / "references").rglob("*.md"))]
+        broken = [
+            f"{doc.relative_to(REPO_ROOT)}: {target}"
+            for doc in docs
+            for target in re.findall(r"\]\(([^)#:]+\.md)(?:#[^)]*)?\)", doc.read_text(encoding="utf-8"))
+            if not (doc.parent / target).resolve().is_file()
+        ]
+        assert not broken, broken

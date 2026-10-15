@@ -97,8 +97,9 @@ make clean       # Remove cache/build artifacts
 ```
 scripts/          # All analysis scripts + shared _common.py and _schema.py (schema registry)
 tests/            # Pytest test suite
-references/       # Database schema documentation
-SKILL.md          # AI skill definition (trigger words, workflows, tips)
+references/       # commands/<name>.md (flags, output, examples), workflows.md, database schema, schema fingerprints
+docs/             # Threat model
+SKILL.md          # AI skill router: when to use each command, safety and privacy rules (≤ 250 lines)
 pyproject.toml    # Tool config (pytest, ruff, mypy)
 ```
 
