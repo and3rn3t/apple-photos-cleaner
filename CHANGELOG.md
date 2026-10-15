@@ -20,6 +20,14 @@ release is cut.
 
 ### Added
 
+- **Original filenames** (#38). Items in every report and preview now carry
+  `original_filename` (from `ZADDITIONALASSETATTRIBUTES.ZORIGINALFILENAME`), and
+  `--human` output shows it. On current macOS, `filename` (`ZASSET.ZFILENAME`)
+  is Photos' internal storage name, a UUID, which made it hard to tell what a
+  cleanup preview would delete. `filename` is unchanged and remains what the
+  AppleScript cross-check compares against. A library without the column
+  reports `original_filenames` in `degraded`, and previews fall back to
+  `filename`.
 - `screen_recordings` as its own `cleanup_executor` category and `junk_finder`
   section, plus `screen_recordings` counts in `library_analysis` (`by_type`) and
   `storage_analyzer` (`by_source`).

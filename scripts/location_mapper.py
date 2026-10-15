@@ -16,11 +16,12 @@ from _common import (
     format_size,
     has_timezone_offset,
     local_datetime_sql,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
     validate_year,
 )
-from _schema import FACES, FILE_SIZE, Degradation, get_schema
+from _schema import FACES, FILE_SIZE, ORIGINAL_FILENAME, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -33,7 +34,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     "ZASSET.ZTRASHEDSTATE",
     *FILE_SIZE,
 )
-OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"people": FACES}
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"original_filenames": ORIGINAL_FILENAME, "people": FACES}
 
 # ---------------------------------------------------------------------------
 # Offline reverse geocoding: maps lat/lon to approximate place names using
@@ -247,9 +248,11 @@ def analyze_locations(
         Location analysis dictionary
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Location mapping") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
         degraded = Degradation(get_schema(conn))
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
         tz_available = has_timezone_offset(cursor)
 
@@ -271,6 +274,7 @@ def analyze_locations(
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
+                {name_col},
                 a.ZDATECREATED,
                 a.ZKIND,
                 a.ZLATITUDE,
@@ -295,6 +299,7 @@ def analyze_locations(
                 {
                     "id": row["Z_PK"],
                     "filename": row["ZFILENAME"],
+                    "original_filename": row["original_filename"],
                     "created": created.isoformat() if created else None,
                     "created_dt": created,
                     "latitude": row["ZLATITUDE"],

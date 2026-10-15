@@ -11,14 +11,16 @@ from _common import (
     SCREENSHOT_SQL,
     PhotosDB,
     coredata_to_local,
+    display_name,
     format_size,
     get_asset_kind_name,
     has_timezone_offset,
     local_datetime_sql,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
 )
-from _schema import FILE_SIZE
+from _schema import FILE_SIZE, ORIGINAL_FILENAME, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -32,7 +34,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     "ZADDITIONALASSETATTRIBUTES.ZORIGINALWIDTH",
     "ZADDITIONALASSETATTRIBUTES.ZORIGINALHEIGHT",
 )
-OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"original_filenames": ORIGINAL_FILENAME}
 
 
 def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
@@ -43,6 +45,9 @@ def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
         Storage analysis dictionary
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Storage analysis") as conn:
+        name_col = original_filename_sql(get_schema(conn))
+        degraded = Degradation(get_schema(conn))
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
         local_dt = local_datetime_sql(tz_available)
@@ -166,6 +171,7 @@ def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
+                {name_col},
                 a.ZDATECREATED,
                 a.ZKIND,
                 aa.ZORIGINALFILESIZE,
@@ -187,6 +193,7 @@ def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
                 {
                     "id": row["Z_PK"],
                     "filename": row["ZFILENAME"],
+                    "original_filename": row["original_filename"],
                     "created": created.isoformat() if created else None,
                     "kind": get_asset_kind_name(row["ZKIND"]),
                     "size": row["ZORIGINALFILESIZE"],
@@ -225,6 +232,7 @@ def analyze_storage(db_path: str | None = None) -> dict[str, Any]:
             )
 
         return {
+            "degraded": degraded.entries,
             "summary": {
                 "total_storage": total_storage,
                 "total_formatted": format_size(total_storage),
@@ -282,7 +290,7 @@ def format_summary(analysis: dict[str, Any]) -> str:
         lines.append("Top 10 Largest Files:")
         for i, item in enumerate(analysis["storage_hogs"][:10], 1):
             kind_emoji = "📹" if item["kind"] == "video" else "📸"
-            lines.append(f"  {i}. {kind_emoji} {item['size_formatted']} - {item['filename']}")
+            lines.append(f"  {i}. {kind_emoji} {item['size_formatted']} - {display_name(item)}")
             if item["dimensions"]:
                 lines.append(f"      {item['dimensions']}, {item['kind']}")
         lines.append("")

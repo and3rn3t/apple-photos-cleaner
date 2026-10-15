@@ -15,14 +15,16 @@ from _common import (
     PhotosDB,
     _safe_float,
     coredata_to_local,
+    display_name,
     format_size,
     has_timezone_offset,
     local_datetime_sql,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
     validate_year,
 )
-from _schema import FILE_SIZE, Degradation, get_schema
+from _schema import FILE_SIZE, ORIGINAL_FILENAME, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -58,6 +60,7 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "ZWELLTIMEDSHOTSCORE",
 )
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     "similarity": ("ZCOMPUTEDASSETATTRIBUTES.ZASSET", "computed.composition"),
     "similarity_features": tuple(f"ZCOMPUTEDASSETATTRIBUTES.{c}" for c in FEATURE_COLUMNS),
 }
@@ -102,11 +105,13 @@ def find_similar_photos(
         Similar photo groups and summary statistics
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Similarity detection") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check available columns
         degraded = Degradation(get_schema(conn))
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         has_similarity = degraded.check("similarity", *OPTIONAL_COLUMNS["similarity"])
         degraded.check("similarity_features", *OPTIONAL_COLUMNS["similarity_features"])
         if not has_similarity:
@@ -127,7 +132,7 @@ def find_similar_photos(
         # Get photos with computed attributes
         query = f"""
             SELECT
-                a.Z_PK, a.ZFILENAME, a.ZDATECREATED, a.ZFAVORITE,
+                a.Z_PK, a.ZFILENAME, {name_col}, a.ZDATECREATED, a.ZFAVORITE,
                 a.ZLATITUDE, a.ZLONGITUDE, a.ZWIDTH, a.ZHEIGHT,
                 aa.ZORIGINALFILESIZE,
                 {tz_offset_sql(tz_available)} AS tz_offset,
@@ -155,6 +160,7 @@ def find_similar_photos(
                 {
                     "id": rd["Z_PK"],
                     "filename": rd["ZFILENAME"],
+                    "original_filename": rd["original_filename"],
                     "created": created.isoformat() if created else None,
                     "is_favorite": bool(rd.get("ZFAVORITE")),
                     "size": rd.get("ZORIGINALFILESIZE") or 0,
@@ -194,6 +200,7 @@ def find_similar_photos(
                     {
                         "id": p["id"],
                         "filename": p["filename"],
+                        "original_filename": p["original_filename"],
                         "created": p["created"],
                         "is_favorite": p["is_favorite"],
                         "size": p["size"],
@@ -263,7 +270,7 @@ def format_summary(data: dict[str, Any]) -> str:
             lines.append(f"  {i:>3}. {group['member_count']} photos  savings: {group['potential_savings_formatted']}")
             for m in group["members"][:5]:
                 fav = "⭐" if m["is_favorite"] else "  "
-                lines.append(f"       {fav} {m['filename']:40s} {m['size_formatted']:>10}")
+                lines.append(f"       {fav} {display_name(m):40s} {m['size_formatted']:>10}")
 
     return "\n".join(lines)
 

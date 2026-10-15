@@ -53,7 +53,7 @@ Covered by `TestSqlInjection` in [`tests/test_security.py`](../tests/test_securi
 | Threat | Mitigation | Where |
 | --- | --- | --- |
 | A filename containing `"` or `\` closes the string literal and injects AppleScript | `escape_applescript` escapes backslashes first, then quotes | `_common.py` |
-| A filename collision trashes or exports the wrong photo | Assets are addressed by `ZUUID` (`<UUID>/L0/001`), never by filename. The resolved item's filename is cross-checked, and on a mismatch the item is skipped | `build_identifier_lists`, `generate_trash_applescript` |
+| A filename collision trashes or exports the wrong photo | Assets are addressed by `ZUUID` (`<UUID>/L0/001`), never by filename. The resolved item's filename is cross-checked against `ZASSET.ZFILENAME`, and on a mismatch the item is skipped. The `original_filename` shown to people is display-only and never feeds the cross-check | `build_identifier_lists`, `generate_trash_applescript`; `test_applescript_identity_still_uses_the_storage_name` |
 | A schema without `ZUUID` falls back to filename matching | `require_uuid_support` refuses to run | `_common.py` |
 | One bad item shifts the id/name pairing | The id and name lists are positional and built together; an item with no UUID aborts the build | `build_identifier_lists` |
 

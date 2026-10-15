@@ -17,10 +17,11 @@ from _common import (
     has_any_quality_score,
     has_timezone_offset,
     is_screen_recording,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
 )
-from _schema import BURSTS, FILE_SIZE, QUALITY_SCORES, Degradation, get_schema
+from _schema import BURSTS, FILE_SIZE, ORIGINAL_FILENAME, QUALITY_SCORES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -35,6 +36,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
 )
 # A category whose columns are all missing is null; partial quality data is scored with what exists.
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     "low_quality": QUALITY_SCORES,
     "burst_leftovers": BURSTS,
     "possible_duplicates": ("ZASSET.ZDUPLICATEASSETVISIBILITYSTATE",),
@@ -60,10 +62,12 @@ def find_junk(
         Dictionary with junk categories
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Junk finder") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
         schema = get_schema(conn)
         degraded = Degradation(schema)
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         degraded.check("low_quality", *OPTIONAL_COLUMNS["low_quality"])
         can_score = has_any_quality_score(schema)
         has_bursts = degraded.check("burst_leftovers", *OPTIONAL_COLUMNS["burst_leftovers"])
@@ -87,6 +91,7 @@ def find_junk(
             join_additional=True,
             tz_offset_available=tz_available,
             order_by="a.ZDATECREATED DESC",
+            schema=schema,
         )
         cursor.execute(query)
 
@@ -105,6 +110,7 @@ def find_junk(
             item = {
                 "id": asset_id,
                 "filename": filename,
+                "original_filename": row["original_filename"],
                 "created": created.isoformat() if created else None,
                 "size": size,
                 "size_formatted": format_size(size),
@@ -153,6 +159,7 @@ def find_junk(
                     {
                         "id": asset_id,
                         "filename": filename,
+                        "original_filename": row["original_filename"],
                         "created": created.isoformat() if created else None,
                         "size": size,
                         "size_formatted": format_size(size),
@@ -171,6 +178,7 @@ def find_junk(
             SELECT
                 a.Z_PK,
                 a.ZFILENAME,
+                {name_col},
                 a.ZDATECREATED,
                 a.ZAVALANCHEKIND,
                 a.ZAVALANCHEPICKTYPE,
@@ -199,6 +207,7 @@ def find_junk(
                 {
                     "id": asset_id,
                     "filename": filename,
+                    "original_filename": row["original_filename"],
                     "created": created.isoformat() if created else None,
                     "size": size,
                     "size_formatted": format_size(size),
@@ -216,6 +225,7 @@ def find_junk(
                 SELECT
                     a.Z_PK,
                     a.ZFILENAME,
+                    {name_col},
                     a.ZDATECREATED,
                     a.ZDUPLICATEASSETVISIBILITYSTATE,
                     aa.ZORIGINALFILESIZE,
@@ -239,6 +249,7 @@ def find_junk(
                     {
                         "id": asset_id,
                         "filename": filename,
+                        "original_filename": row["original_filename"],
                         "created": created.isoformat() if created else None,
                         "size": size,
                         "size_formatted": format_size(size),

@@ -33,6 +33,8 @@ def script_args(script: str, tmp_path: Path) -> list[str]:
         "cleanup_executor": ["--category", "all_screenshots"],
         "smart_export": ["--output-dir", str(tmp_path / "export"), "--plan-only", "--format", "json"],
         "doctor": ["--format", "json"],
+        # Search mode lists files (and so original names); inventory mode only counts scenes.
+        "scene_search": ["--search", "beach"],
     }.get(script, [])
 
 
@@ -52,6 +54,7 @@ EXTRA_COLUMNS = [
     ("ZASSET", "ZPLAYBACKSTYLE INTEGER DEFAULT 3"),
     ("ZASSET", "ZLIBRARYSCOPE INTEGER DEFAULT 0"),
     ("ZASSET", "ZSHAREDLIBRARYSCOPEIDENTIFIER INTEGER"),
+    ("ZADDITIONALASSETATTRIBUTES", "ZORIGINALFILENAME TEXT DEFAULT 'IMG_0001.HEIC'"),
     ("ZDETECTEDFACE", "ZQUALITYMEASURE REAL DEFAULT 0.6"),
     ("ZDETECTEDFACE", "ZBLURSCORE REAL DEFAULT 0.1"),
     ("ZDETECTEDFACE", "ZSMILESCORE REAL DEFAULT 0.5"),

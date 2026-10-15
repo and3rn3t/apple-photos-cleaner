@@ -18,10 +18,11 @@ from _common import (
     get_quality_score,
     has_timezone_offset,
     local_datetime_sql,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
 )
-from _schema import FACES, QUALITY_SCORES, Degradation, get_schema
+from _schema import FACES, ORIGINAL_FILENAME, QUALITY_SCORES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -34,6 +35,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     *FACES,
 )
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     # Only ranks each person's best photos; without it they are listed unranked.
     "best_photos": QUALITY_SCORES,
     "catalog_face_count": ("ZPERSON.ZFACECOUNT",),
@@ -57,10 +59,12 @@ def analyze_people(
         People analysis dictionary
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="People analysis") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         schema = detect_face_schema(cursor)
         registry = get_schema(conn)
         degraded = Degradation(registry)
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         degraded.check("best_photos", *OPTIONAL_COLUMNS["best_photos"])
         degraded.check("catalog_face_count", *OPTIONAL_COLUMNS["catalog_face_count"])
         score_terms, score_join = computed_scores_sql(registry, *QUALITY_SCORE_COLUMNS)
@@ -142,6 +146,7 @@ def analyze_people(
                 SELECT
                     a.Z_PK,
                     a.ZFILENAME,
+                    {name_col},
                     a.ZDATECREATED,
                     a.ZFAVORITE,
                     {scores},
@@ -167,6 +172,7 @@ def analyze_people(
                     {
                         "id": row["Z_PK"],
                         "filename": row["ZFILENAME"],
+                        "original_filename": row["original_filename"],
                         "created": created.isoformat() if created else None,
                         "quality_score": round(quality, 3) if quality else None,
                         "is_favorite": bool(row["ZFAVORITE"]),

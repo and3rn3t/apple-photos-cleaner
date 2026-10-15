@@ -14,12 +14,14 @@ from _common import (
     PhotosDB,
     _safe_float,
     coredata_to_local,
+    display_name,
     format_size,
     has_timezone_offset,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
 )
-from _schema import FACES, FILE_SIZE, Degradation, get_schema
+from _schema import FACES, FILE_SIZE, ORIGINAL_FILENAME, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -32,6 +34,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     *FILE_SIZE,
 )
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {
+    "original_filenames": ORIGINAL_FILENAME,
     "faces": (*FACES, "face.quality"),
     "blur": ("face.blur",),
     "smile": ("face.smile",),
@@ -98,12 +101,14 @@ def analyze_face_quality(
         Face quality analysis per person
     """
     with PhotosDB(db_path, require=REQUIRED_COLUMNS, operation="Face quality scoring") as conn:
+        name_col = original_filename_sql(get_schema(conn))
         cursor = conn.cursor()
         tz_available = has_timezone_offset(cursor)
 
         # Check for face detection tables
         schema = get_schema(conn)
         degraded = Degradation(schema)
+        degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
         has_faces = degraded.check("faces", *OPTIONAL_COLUMNS["faces"])
         has_blur = degraded.check("blur", *OPTIONAL_COLUMNS["blur"])
         has_smile = degraded.check("smile", *OPTIONAL_COLUMNS["smile"])
@@ -129,6 +134,7 @@ def analyze_face_quality(
             "p.ZFULLNAME",
             schema.select("ZPERSON.ZFACECOUNT", "p"),
             "a.ZFILENAME",
+            name_col,
             "a.ZDATECREATED",
             "a.ZFAVORITE",
             "a.ZWIDTH",
@@ -192,6 +198,7 @@ def analyze_face_quality(
             face = {
                 "asset_id": rd["ZASSET"],
                 "filename": rd["ZFILENAME"],
+                "original_filename": rd["original_filename"],
                 "created": created.isoformat() if created else None,
                 "is_favorite": bool(rd.get("ZFAVORITE")),
                 "size": rd.get("ZORIGINALFILESIZE") or 0,
@@ -274,13 +281,13 @@ def format_summary(data: dict[str, Any]) -> str:
             for f in person["best_photos"][:3]:
                 fav = "⭐" if f["is_favorite"] else "  "
                 smile = f"  😊{f['smile_score']:.2f}" if f.get("smile_score") is not None else ""
-                lines.append(f"   {fav} {f['filename']:35s} score={f['face_score']:.4f}{smile}")
+                lines.append(f"   {fav} {display_name(f):35s} score={f['face_score']:.4f}{smile}")
 
         if person["worst_photos"]:
             lines.append("   Worst portraits:")
             for f in person["worst_photos"][:3]:
                 blur_info = f"  blur={f['blur_score']:.2f}" if f.get("blur_score") is not None else ""
-                lines.append(f"      {f['filename']:35s} score={f['face_score']:.4f}{blur_info}")
+                lines.append(f"      {display_name(f):35s} score={f['face_score']:.4f}{blur_info}")
 
     return "\n".join(lines)
 

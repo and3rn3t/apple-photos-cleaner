@@ -11,14 +11,16 @@ from typing import Any
 from _common import (
     PhotosDB,
     coredata_to_local,
+    display_name,
     format_size,
     has_timezone_offset,
     local_datetime_sql,
+    original_filename_sql,
     run_script,
     tz_offset_sql,
     validate_year,
 )
-from _schema import FILE_SIZE, SCENES
+from _schema import FILE_SIZE, ORIGINAL_FILENAME, SCENES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
 REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -33,7 +35,7 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     *SCENES,
     "ZSCENECLASSIFICATION.ZCONFIDENCE",
 )
-OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
+OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {"original_filenames": ORIGINAL_FILENAME}
 
 
 def search_scenes(
@@ -83,10 +85,16 @@ def _search_by_scene(
     tz_available: bool = False,
 ) -> dict[str, Any]:
     """Search photos matching a specific scene classification."""
+    schema = get_schema(cursor)
+    name_col = original_filename_sql(schema)
+    # Only search results list files, so only this path can lose original names.
+    degraded = Degradation(schema)
+    degraded.check("original_filenames", *OPTIONAL_COLUMNS["original_filenames"])
     query = f"""
         SELECT
             a.Z_PK,
             a.ZFILENAME,
+            {name_col},
             a.ZDATECREATED,
             a.ZKIND,
             a.ZFAVORITE,
@@ -121,6 +129,7 @@ def _search_by_scene(
             {
                 "id": row["Z_PK"],
                 "filename": row["ZFILENAME"],
+                "original_filename": row["original_filename"],
                 "created": created.isoformat() if created else None,
                 "kind": "photo" if row["ZKIND"] == 0 else "video",
                 "is_favorite": bool(row["ZFAVORITE"]),
@@ -170,6 +179,7 @@ def _search_by_scene(
         related_scenes = []
 
     return {
+        "degraded": degraded.entries,
         "mode": "search",
         "search_term": search_term,
         "results": results,
@@ -305,7 +315,7 @@ def format_summary(data: dict[str, Any]) -> str:
         for r in data["results"][:20]:
             fav = " ★" if r["is_favorite"] else ""
             conf = f" ({r['confidence']:.2f})" if r["confidence"] else ""
-            lines.append(f"  {r['filename']} | {r['scene']}{conf}{fav}")
+            lines.append(f"  {display_name(r)} | {r['scene']}{conf}{fav}")
 
         if data["related_scenes"]:
             lines.append("")
