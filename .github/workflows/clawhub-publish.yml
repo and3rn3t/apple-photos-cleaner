@@ -111,9 +111,10 @@ jobs:
             --source-repo "${{ github.repository }}" \
             --source-commit "${{ github.sha }}" \
             --source-ref "${{ github.ref }}" \
-            --json | tee publish.json
+            --json | tee "$RUNNER_TEMP/publish.json"
+          # Captured outside the published folder (`.`) so it can never end up in the bundle.
           # The registry may queue a version (e.g. for its security scan) instead of publishing it at once.
-          status=$(python3 -c "import json; d=json.load(open('publish.json')); print(d.get('publicationStatus') or d.get('status') or 'unknown')")
+          status=$(python3 -c "import json, os; d=json.load(open(os.path.join(os.environ['RUNNER_TEMP'], 'publish.json'))); print(d.get('publicationStatus') or d.get('status') or 'unknown')")
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - name: Summarise
@@ -130,9 +131,11 @@ jobs:
               echo "- Dry run: validated but **not** published."
             elif [ "${{ steps.publish.outcome }}" != "success" ]; then
               echo "- ❌ Publish **failed**; see the Publish step log."
+            elif [ "${{ steps.publish.outputs.status }}" = "published" ]; then
+              echo "- Published to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner)."
             elif [ "${{ steps.publish.outputs.status }}" = "pending" ]; then
               echo "- Submitted to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner); publication is **pending** (registry scan). Confirm later with \`clawhub inspect apple-photos-cleaner\`."
             else
-              echo "- Published to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner) (status: \`${{ steps.publish.outputs.status }}\`)."
+              echo "- Submitted to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner), but publication is **not confirmed** (status: \`${{ steps.publish.outputs.status }}\`). Check with \`clawhub inspect apple-photos-cleaner\`."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
