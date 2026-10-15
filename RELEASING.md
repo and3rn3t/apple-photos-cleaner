@@ -43,6 +43,8 @@ Raising the Python floor is called out in the CHANGELOG even when it's a patch.
 7. **Open the PR** with the CHANGELOG section as its description, then merge once CI is green.
 8. **After merge:**
    - Confirm the *Publish to ClawHub* run succeeded and shows the new version.
+     ClawHub may first accept it as **pending** while its security scan runs (1.1.0's took
+     about an hour); the run summary says so, and `latestVersion` updates once it clears.
      A push that doesn't change the version is a no-op, so a green run with
      "Version unchanged" means the bump didn't land.
    - Check `clawhub inspect apple-photos-cleaner` (or the listing page) shows `X.Y.Z`.

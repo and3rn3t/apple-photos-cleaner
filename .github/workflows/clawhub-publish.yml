@@ -99,8 +99,10 @@ jobs:
             --dry-run --json
 
       - name: Publish
+        id: publish
         if: steps.check.outputs.needed == 'true' && !inputs.dry_run
         run: |
+          set -o pipefail  # a failed publish must fail the step, not be masked by `tee`
           clawhub skill publish . \
             --slug apple-photos-cleaner \
             --version "${{ steps.manifest.outputs.version }}" \
@@ -109,7 +111,10 @@ jobs:
             --source-repo "${{ github.repository }}" \
             --source-commit "${{ github.sha }}" \
             --source-ref "${{ github.ref }}" \
-            --json
+            --json | tee publish.json
+          # The registry may queue a version (e.g. for its security scan) instead of publishing it at once.
+          status=$(python3 -c "import json; d=json.load(open('publish.json')); print(d.get('publicationStatus') or d.get('status') or 'unknown')")
+          echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - name: Summarise
         if: always()
@@ -123,7 +128,11 @@ jobs:
               echo "- No publish — the registry already has this version."
             elif [ "${{ inputs.dry_run }}" = "true" ]; then
               echo "- Dry run: validated but **not** published."
+            elif [ "${{ steps.publish.outcome }}" != "success" ]; then
+              echo "- ❌ Publish **failed**; see the Publish step log."
+            elif [ "${{ steps.publish.outputs.status }}" = "pending" ]; then
+              echo "- Submitted to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner); publication is **pending** (registry scan). Confirm later with \`clawhub inspect apple-photos-cleaner\`."
             else
-              echo "- Published to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner)."
+              echo "- Published to [ClawHub](https://www.clawhub.ai/skills/apple-photos-cleaner) (status: \`${{ steps.publish.outputs.status }}\`)."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
