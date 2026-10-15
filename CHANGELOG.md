@@ -8,6 +8,12 @@ release is cut.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-15
+
+Fixes from checking 1.1.0 against a real macOS 26 library. Screenshot cleanup
+no longer selects screen recordings, and previews show the filenames people
+recognize. Minor rather than patch because both add JSON fields.
+
 ### Fixed
 
 - **Screen recordings are no longer treated as screenshots** (#37). Photos flags
@@ -233,7 +239,8 @@ repository, so its exact contents aren't recorded. It sits between 1.0.0 and
   preview-first.
 - Schema detection for the old and new (`ZPERSONFORFACE`/`ZASSETFORFACE`) face tables.
 
-[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.0.3...v1.1.0
 <!-- No tags existed before 1.0.3; versions are anchored on commits. -->
 [1.0.3]: https://github.com/and3rn3t/apple-photos-cleaner/compare/05552f3...v1.0.3
