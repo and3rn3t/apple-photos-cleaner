@@ -1,7 +1,7 @@
 ---
 name: apple-photos-cleaner
 description: Analyze, clean up, and organize Apple Photos libraries. Find and report junk photos (screenshots, low-quality, burst leftovers, duplicates), analyze storage usage, generate photo timeline recaps, plan smart exports, analyze Live Photos, check iCloud sync, audit shared libraries, detect similar photos, curate seasonal highlights, and score face quality. All analysis operations are READ-ONLY on the database (safe); the separate cleanup and export commands drive Photos.app via AppleScript and require explicit opt-in. macOS only. PRIVACY — reports can include recognized people's names, face data, GPS coordinates, and shared-library contributor identifiers; all processing is local with no network access, but written reports carry that data. Requires Python 3.10+ (stdlib only) and access to the Apple Photos SQLite database. Trigger on: Photos cleanup, photo storage, duplicate photos, junk photos, screenshot cleanup, Photos analysis, photo timeline, photo export, Photos library stats, burst cleanup, storage hogs, photo organization, Live Photos, iCloud sync, shared library, similar photos, seasonal highlights, face quality, portraits.
-version: 1.2.0
+version: 1.3.0
 metadata: {"openclaw": {"os": ["macos"], "emoji": "📸", "homepage": "https://github.com/and3rn3t/apple-photos-cleaner", "requires": {"bins": ["python3", "osascript"]}}}
 ---
 

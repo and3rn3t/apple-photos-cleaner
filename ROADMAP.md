@@ -4,7 +4,7 @@ Where `apple-photos-cleaner` goes after 1.0. It starts with maintenance and buil
 moonshots. Each tier assumes the tiers below it are mostly done. Pick work from the lowest tier
 that still has open items unless something higher is blocking a release.
 
-> Status as of 2026-10-15: **v1.2.0** (real-library fixes) ready to ship; v1.1.0 on ClawHub. 21
+> Status as of 2026-10-15: **v1.3.0** (scene search on macOS 26) ready to ship; v1.2.0 on ClawHub. 21
 > commands (incl. `doctor`), stdlib-only, read-only analysis + two token-confirmed mutating commands.
 > ~95% coverage, CI on macOS × Python 3.10 / 3.14 / 3.15. Verified against a real macOS 26 library.
 > ✅ marks shipped items.
@@ -365,10 +365,11 @@ Semver: a new JSON field is a minor; a removed or renamed one is a major.
 | **1.0.3** ✅ | Hygiene patch | T0.1–T0.6, T0.8, T0.12, T0.13 |
 | **1.1** ✅ | Solid ground | T1.1, T1.2, T1.4, T1.9, T1.10, T1.19, T1.20, T1.23, plus T0.9, T0.16 |
 | **1.2** ✅ | Real-library fixes | Screen recordings split from screenshots (#37, part of T2.5), original filenames (#38) |
-| **1.3** | One CLI | T1.6–T1.8, T1.14–T1.16, T1.18, T1.25, T2.23, D.1 |
-| **1.4** | Safe cleanup | T2.1–T2.4, T2.6–T2.8, T1.21, T3.1 |
-| **1.5** | Richer insight | T2.9–T2.17, T3.15, T3.17, T3.18 |
-| **1.6** | Media & sources | T2.18–T2.22, T2.25, D.2, D.3 |
+| **1.3** ✅ | Scene search on macOS 26 | Labels from Photos' search index (#35) |
+| **1.4** | One CLI | T1.6–T1.8, T1.14–T1.16, T1.18, T1.25, T2.23, D.1 |
+| **1.5** | Safe cleanup | T2.1–T2.4, T2.6–T2.8, T1.21, T3.1 |
+| **1.6** | Richer insight | T2.9–T2.17, T3.15, T3.17, T3.18 |
+| **1.7** | Media & sources | T2.18–T2.22, T2.25, D.2, D.3 |
 | **2.0** | Reports & recaps | T1.7 schema v1 frozen, T1.12, T3.2–T3.7, T3.16, T2.24 |
 | **2.x** | Library tooling | T3.8–T3.14, T3.19–T3.24, T1.17 |
 | **3.0** | Native intelligence | T4.1–T4.4, T4.6, T4.7, T4.8 |
