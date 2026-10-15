@@ -8,6 +8,12 @@ release is cut.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-15
+
+Scene search works again on macOS 26. Its labels now come from Photos' own
+search index, verified against a real macOS 26.7.2 library. Minor rather than
+patch because results gain a `source` field.
+
 ### Fixed
 
 - **Scene search works on macOS 26** (#35). Its `ZSCENECLASSIFICATION` keys
@@ -257,7 +263,8 @@ repository, so its exact contents aren't recorded. It sits between 1.0.0 and
   preview-first.
 - Schema detection for the old and new (`ZPERSONFORFACE`/`ZASSETFORFACE`) face tables.
 
-[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.0.3...v1.1.0
 <!-- No tags existed before 1.0.3; versions are anchored on commits. -->
