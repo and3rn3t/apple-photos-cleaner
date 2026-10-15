@@ -4,9 +4,10 @@ Where `apple-photos-cleaner` goes after 1.0. It starts with maintenance and buil
 moonshots. Each tier assumes the tiers below it are mostly done. Pick work from the lowest tier
 that still has open items unless something higher is blocking a release.
 
-> Status as of 2026-10-13: **v1.0.3** (hygiene patch) ready to ship; v1.0.2 on ClawHub. 20 scripts,
-> stdlib-only, read-only analysis + two opt-in mutating commands. ~85% coverage, CI on macOS ×
-> Python 3.10 / 3.14 / 3.15. ✅ marks shipped items.
+> Status as of 2026-10-15: **v1.1.0** ("Solid ground") ready to ship; v1.0.3 on ClawHub. 21 commands
+> (incl. `doctor`), stdlib-only, read-only analysis + two token-confirmed mutating commands. ~95%
+> coverage, CI on macOS × Python 3.10 / 3.14 / 3.15. Verified against a real macOS 26 library.
+> ✅ marks shipped items.
 
 ---
 
@@ -15,9 +16,9 @@ that still has open items unless something higher is blocking a release.
 | Now (next ~6 weeks) | Next (this half) | Later (this year and beyond) |
 | --- | --- | --- |
 | ~~Fix local-time date math~~ ✅ | Unified `photos-cleaner` CLI | Native Swift helper (PhotoKit + Vision) |
-| Mutation confirmation tokens | Versioned JSON schemas | Perceptual duplicates, OCR, semantic search |
-| Schema registry + `doctor` | Undo journal + protection rules | HTML dashboard, Year in Review |
-| SKILL.md diet (≤ 250 lines) | Demo library + Homebrew/pipx install | MCP server, Library Butler, auto-documentary |
+| ~~Mutation confirmation tokens~~ ✅ | Versioned JSON schemas | Perceptual duplicates, OCR, semantic search |
+| ~~Schema registry + `doctor`~~ ✅ | Undo journal + protection rules | HTML dashboard, Year in Review |
+| ~~SKILL.md diet (≤ 250 lines)~~ ✅ | Demo library + Homebrew/pipx install | MCP server, Library Butler, auto-documentary |
 
 ---
 
@@ -74,7 +75,7 @@ macOS release.
 | T0.6 ✅ | **Pin GitHub Actions by SHA.** Renovate keeps the pins fresh | S | No `@v4`-style refs in workflows |
 | T0.7 | **Release provenance.** Build release archives in CI with artifact attestations + an SBOM; checksums in release notes | S | Every GitHub release has attestation and `SHA256SUMS` |
 | T0.8 ✅ | **Security regression tests.** AppleScript injection (filenames with quotes, backslashes, newlines, Unicode), path traversal in `--output-dir`, SQL built from user input | S | A dedicated `tests/test_security.py`; CodeQL stays clean |
-| T0.9 | **Threat model doc.** What the skill trusts (DB contents, filenames, album titles, agent input) and why | S | `docs/threat-model.md` linked from SECURITY.md |
+| T0.9 ✅ | **Threat model doc.** What the skill trusts (DB contents, filenames, album titles, agent input) and why | S | `docs/threat-model.md` linked from SECURITY.md |
 
 ### Cadence
 
@@ -86,7 +87,7 @@ macOS release.
 | T0.13 ✅ | **Release checklist + CHANGELOG.** Keep-a-Changelog, backfilled to 1.0.0; version bump, tag, ClawHub publish verification, release-drafter notes | S | `RELEASING.md` and `CHANGELOG.md` exist; every release follows them |
 | T0.14 | **Coverage ratchet.** Raise `fail_under` from 80 as coverage climbs | S, recurring | Ratchet bumped whenever actual coverage is ≥ 3 points above it |
 | T0.15 | **Issue triage SLA.** Label and respond to new issues within a week | S, recurring | No unlabeled issue older than 7 days |
-| T0.16 | **Deprecation policy.** Flags and JSON fields get one minor release of warnings before removal | S | Policy in CONTRIBUTING.md; deprecations emit to `warnings` in JSON |
+| T0.16 ✅ | **Deprecation policy.** Flags and JSON fields get one minor release of warnings before removal | S | Policy in CONTRIBUTING.md; deprecations emit to `warnings` in JSON |
 
 ---
 
@@ -102,10 +103,10 @@ detection is ad-hoc (`detect_face_schema`, per-script `PRAGMA table_info` checks
 
 | ID | Item | Size | Done when |
 | --- | --- | --- | --- |
-| T1.1 ⭐ | **Central schema registry.** One module that introspects the DB once, records which tables/columns exist, and maps logical names (`face.person_fk`, `asset.trashed`) to physical columns. All scripts use it | L | No script calls `PRAGMA table_info` directly; adding a renamed column is a one-line change |
-| T1.2 | **Schema fingerprinting.** Hash table and column sets → known macOS version. Unknown fingerprint = warning, not crash | M | `doctor` reports "macOS 26 schema (known)" or "unknown schema: features X, Y degraded" |
+| T1.1 ⭐ ✅ | **Central schema registry.** One module that introspects the DB once, records which tables/columns exist, and maps logical names (`face.person_fk`, `asset.trashed`) to physical columns. All scripts use it | L | No script calls `PRAGMA table_info` directly; adding a renamed column is a one-line change |
+| T1.2 ✅ | **Schema fingerprinting.** Hash table and column sets → known macOS version. Unknown fingerprint = warning, not crash | M | `doctor` reports "macOS 26 schema (known)" or "unknown schema: features X, Y degraded" |
 | T1.3 | **Real-schema fixtures.** Schema-only `CREATE TABLE` dumps (no real rows) from each supported macOS version, plus a synthetic data generator that fills them | L | The suite runs every script against every fixture schema; hand-written in-memory tables reduced to unit tests |
-| T1.4 | **Graceful degradation contract.** Every script declares required vs optional columns; missing optional → that section returns `null` with a `degraded` reason | M | Removing any single optional column from a fixture never crashes a script |
+| T1.4 ✅ | **Graceful degradation contract.** Every script declares required vs optional columns; missing optional → that section returns `null` with a `degraded` reason | M | Removing any single optional column from a fixture never crashes a script |
 | T1.5 | **Schema drift bot.** A scheduled workflow diffs a contributor-submitted schema dump (via `doctor --schema-dump`) against known fingerprints and opens an issue | M | New macOS schemas surface as issues within days of release |
 
 ### 1B. One CLI, one contract
@@ -115,8 +116,8 @@ detection is ad-hoc (`detect_face_schema`, per-script `PRAGMA table_info` checks
 | T1.6 ⭐ | **Unified entry point.** `photos-cleaner <command>` (and `python3 -m photos_cleaner`) dispatching to the existing scripts. Scripts keep working standalone | M | `photos-cleaner --help` lists all commands; SKILL.md examples use it |
 | T1.7 | **Versioned JSON output schema.** Every result gets `{"schema_version", "command", "generated_at", "library", "data", "warnings", "degraded"}`. Publish JSON Schema files in `schemas/` | L | Schemas validated in tests; changing a field shape fails CI |
 | T1.8 | **Consistent flags.** `--db-path`, `--library`, `--output`, `--format`, `--year`, `--start-date/--end-date`, `--limit`, `--quiet`, `--verbose` everywhere they make sense | M | A test walks every parser and asserts the shared flag set |
-| T1.9 | **Exit codes.** 0 ok, 2 usage, 3 DB not found, 4 permission denied, 5 schema unsupported, 10 user aborted, 11 confirmation required | S | Documented and tested; agents can branch on them |
-| T1.10 ⭐ | **`doctor` command.** Checks Python, DB location, Full Disk Access, Automation permission, schema fingerprint, library size, iCloud "Optimize Storage" state, optional helper presence. Prints concrete fixes | M | First thing SKILL.md tells an agent to run when anything fails |
+| T1.9 ✅ | **Exit codes.** 0 ok, 2 usage, 3 DB not found, 4 permission denied, 5 schema unsupported, 10 user aborted, 11 confirmation required | S | Documented and tested; agents can branch on them |
+| T1.10 ⭐ ✅ | **`doctor` command.** Checks Python, DB location, Full Disk Access, Automation permission, schema fingerprint, library size, iCloud "Optimize Storage" state, optional helper presence. Prints concrete fixes | M | First thing SKILL.md tells an agent to run when anything fails |
 | T1.11 | **Config file.** `~/.config/photos-cleaner/config.toml` for defaults (thresholds, hemisphere, protected albums, redaction level). CLI flags override | S | `tomllib` on 3.11+, minimal fallback parser for older Pythons |
 | T1.12 | **Importable Python API.** A real package (`photos_cleaner`) so other tools can `from photos_cleaner import junk` instead of shelling out | M | Scripts become thin wrappers; API documented and typed |
 | T1.13 | **Accessible terminal output.** Respect `NO_COLOR`, `--no-emoji`, screen-reader-friendly `--human` mode (no box art, no bar charts) | S | Every `--human` formatter has a plain variant |
@@ -140,8 +141,8 @@ deleting the wrong photo.
 
 | ID | Item | Size | Done when |
 | --- | --- | --- | --- |
-| T1.19 ⭐ | **Confirmation tokens for mutations.** Today `cleanup_executor` confirms with `input()` ([cleanup_executor.py:506](scripts/cleanup_executor.py#L506)), which an agent can satisfy by piping `yes`. `smart_export` skips confirmation entirely off-TTY ([smart_export.py:383](scripts/smart_export.py#L383)). Instead: preview emits a plan hash; execute requires `--confirm <hash>` and refuses if the candidate set changed | M | Nothing executes without a matching token from a preview; documented as the agent flow in SKILL.md |
-| T1.20 | **SQLite authorizer guard.** On top of `mode=ro`, install `set_authorizer` that denies every write opcode, so a future bug can't write even against a misopened connection | S | Test proves an `INSERT` through `connect_db` raises |
+| T1.19 ⭐ ✅ | **Confirmation tokens for mutations.** Today `cleanup_executor` confirms with `input()` ([cleanup_executor.py:506](scripts/cleanup_executor.py#L506)), which an agent can satisfy by piping `yes`. `smart_export` skips confirmation entirely off-TTY ([smart_export.py:383](scripts/smart_export.py#L383)). Instead: preview emits a plan hash; execute requires `--confirm <hash>` and refuses if the candidate set changed | M | Nothing executes without a matching token from a preview; documented as the agent flow in SKILL.md |
+| T1.20 ✅ | **SQLite authorizer guard.** On top of `mode=ro`, install `set_authorizer` that denies every write opcode, so a future bug can't write even against a misopened connection | S | Test proves an `INSERT` through `connect_db` raises |
 | T1.21 | **Mutation rate limits.** Hard cap per run (default 500, ceiling configurable), and a cool-down warning when > N items were deleted in the last 24 h | S | Exceeding the cap requires an explicit flag *and* a new token |
 | T1.22 | **Fuzz + property tests.** Hypothesis-style tests (dev-only dependency) over timestamp conversion, AppleScript escaping, folder sanitizing, and query builders | M | Runs in CI with a bounded example count |
 
@@ -149,7 +150,7 @@ deleting the wrong photo.
 
 | ID | Item | Size | Done when |
 | --- | --- | --- | --- |
-| T1.23 ⭐ | **SKILL.md diet / progressive disclosure.** The manifest is ~1,300 lines that agents pay for on every load. Slim it to a router (≤ 250 lines); move per-command detail into `references/commands/<name>.md` | M | SKILL.md ≤ 250 lines; manifest test enforces the cap |
+| T1.23 ⭐ ✅ | **SKILL.md diet / progressive disclosure.** The manifest is ~1,300 lines that agents pay for on every load. Slim it to a router (≤ 250 lines); move per-command detail into `references/commands/<name>.md` | M | SKILL.md ≤ 250 lines; manifest test enforces the cap |
 | T1.24 | **Token-budget-aware output.** `--summary` (a few hundred tokens) vs `--full`; list results paginate with a cursor instead of dumping 10k rows | M | Default output of every command fits under a documented token budget |
 | T1.25 | **`next_actions` in every result.** Structured suggestions such as `{"command": "cleanup_executor", "args": [...], "why": "287 old screenshots, 2.1 GB"}` | S | Agents chain commands without re-reading docs |
 | T1.26 | **Trigger + task evals.** Eval set of user prompts → expected command and key facts in the answer; run against SKILL.md changes | M | `make eval` passes; runs in CI on SKILL.md changes |
@@ -362,7 +363,7 @@ Semver: a new JSON field is a minor; a removed or renamed one is a major.
 | Release | Theme | Scope |
 | --- | --- | --- |
 | **1.0.3** ✅ | Hygiene patch | T0.1–T0.6, T0.8, T0.12, T0.13 |
-| **1.1** | Solid ground | T1.1, T1.2, T1.4, T1.9, T1.10, T1.19, T1.20, T1.23 |
+| **1.1** ✅ | Solid ground | T1.1, T1.2, T1.4, T1.9, T1.10, T1.19, T1.20, T1.23, plus T0.9, T0.16 |
 | **1.2** | One CLI | T1.6–T1.8, T1.14–T1.16, T1.18, T1.25, T2.23, D.1 |
 | **1.3** | Safe cleanup | T2.1–T2.4, T2.6–T2.8, T1.21, T3.1 |
 | **1.4** | Richer insight | T2.9–T2.17, T3.15, T3.17, T3.18 |

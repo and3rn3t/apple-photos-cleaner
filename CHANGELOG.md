@@ -8,6 +8,17 @@ release is cut.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-15
+
+"Solid ground": roadmap items T0.9, T0.16, T1.1, T1.2, T1.4, T1.9, T1.10, T1.19,
+T1.20 and T1.23. Mutations now need a confirmation token, the database is guarded
+against writes, schema differences between macOS versions degrade gracefully
+instead of crashing, and a new `doctor` command diagnoses setup problems.
+
+Known issue: scene search doesn't work on macOS 26, whose database no longer
+stores scene names. `scene_search` exits 5 and the scene sections of
+`on_this_day`/`timeline_recap` are reported as `degraded` (#35).
+
 ### Breaking (safety)
 
 - **Mutations need a confirmation token** (T1.19). The old prompts could be
@@ -198,7 +209,8 @@ repository, so its exact contents aren't recorded. It sits between 1.0.0 and
   preview-first.
 - Schema detection for the old and new (`ZPERSONFORFACE`/`ZASSETFORFACE`) face tables.
 
-[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.0.3...v1.1.0
 <!-- No tags existed before 1.0.3; versions are anchored on commits. -->
 [1.0.3]: https://github.com/and3rn3t/apple-photos-cleaner/compare/05552f3...v1.0.3
 [1.0.2]: https://github.com/and3rn3t/apple-photos-cleaner/compare/cf2f97e...05552f3

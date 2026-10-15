@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "apple-photos-cleaner"
-version = "1.0.3"
+version = "1.1.0"
 description = "Analyze, audit, and clean up your Apple Photos library via its SQLite database"
 requires-python = ">=3.10"
 license = "MIT"
@@ -67,8 +67,8 @@ ignore = [
 known-first-party = ["_bootstrap", "_common", "_schema"]
 
 [tool.coverage.report]
-# Ratchet, not a target — the suite sits around 85%. Raise this when it climbs.
-fail_under = 80
+# Ratchet, not a target — the suite sits around 95%. Raise this when it climbs (T0.14).
+fail_under = 92
 
 [tool.mypy]
 # No `python_version` pin: the type results are interpreter-independent, and
