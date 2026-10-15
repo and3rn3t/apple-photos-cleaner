@@ -16,6 +16,7 @@ from _common import (
     get_quality_score,
     has_any_quality_score,
     has_timezone_offset,
+    is_screen_recording,
     run_script,
     tz_offset_sql,
 )
@@ -72,6 +73,7 @@ def find_junk(
             "degraded": degraded.entries,
             "screenshots": [],
             "old_screenshots": [],
+            "screen_recordings": [],
             "low_quality": [],
             "burst_leftovers": [],
             "possible_duplicates": [],
@@ -79,7 +81,7 @@ def find_junk(
             "estimated_savings": {},
         }
 
-        # 1. All screenshots
+        # 1. Screenshots, and screen recordings (videos carrying the same flag), kept apart
         query = build_asset_query(
             where_clauses=["a.ZTRASHEDSTATE != 1", "a.ZISDETECTEDSCREENSHOT = 1"],
             join_additional=True,
@@ -90,6 +92,7 @@ def find_junk(
 
         screenshot_size = 0
         old_screenshot_size = 0
+        recording_size = 0
         screenshot_age_cutoff = datetime.now() - timedelta(days=screenshot_age_days)
         cutoff_timestamp = datetime_to_coredata(screenshot_age_cutoff)
 
@@ -99,8 +102,6 @@ def find_junk(
             created = coredata_to_local(row["ZDATECREATED"], row["tz_offset"])
             size = row["ZORIGINALFILESIZE"] or 0
 
-            screenshot_size += size
-
             item = {
                 "id": asset_id,
                 "filename": filename,
@@ -109,6 +110,12 @@ def find_junk(
                 "size_formatted": format_size(size),
             }
 
+            if is_screen_recording(row):
+                recording_size += size
+                results["screen_recordings"].append(item)
+                continue
+
+            screenshot_size += size
             results["screenshots"].append(item)
 
             # Check if old screenshot
@@ -244,6 +251,7 @@ def find_junk(
         results["totals"] = {
             "screenshots": len(results["screenshots"]),
             "old_screenshots": len(results["old_screenshots"]),
+            "screen_recordings": len(results["screen_recordings"]),
             # None when the category could not be computed on this library (see "degraded").
             "low_quality": _count(results["low_quality"]),
             "burst_leftovers": _count(results["burst_leftovers"]),
@@ -252,7 +260,7 @@ def find_junk(
 
         # Estimated savings (conservative - assume we'd delete old screenshots + burst leftovers)
         conservative_savings = old_screenshot_size + burst_size
-        aggressive_savings = screenshot_size + low_quality_size + burst_size + (duplicate_size // 2)
+        aggressive_savings = screenshot_size + recording_size + low_quality_size + burst_size + (duplicate_size // 2)
 
         results["estimated_savings"] = {
             "conservative": {
@@ -263,7 +271,7 @@ def find_junk(
             "aggressive": {
                 "bytes": aggressive_savings,
                 "formatted": format_size(aggressive_savings),
-                "description": "All screenshots + low quality + bursts + ~50% of duplicates",
+                "description": "All screenshots + screen recordings + low quality + bursts + ~50% of duplicates",
             },
         }
 
@@ -288,6 +296,9 @@ def format_summary(junk: dict[str, Any]) -> str:
         lines.append(f"  📸 Screenshots: {totals['screenshots']:,}")
         if totals["old_screenshots"] > 0:
             lines.append(f"     └─ Old (>30 days): {totals['old_screenshots']:,}")
+
+    if totals["screen_recordings"] > 0:
+        lines.append(f"  🎥 Screen Recordings: {totals['screen_recordings']:,}")
 
     if (totals["low_quality"] or 0) > 0:
         lines.append(f"  📉 Low Quality: {totals['low_quality']:,}")

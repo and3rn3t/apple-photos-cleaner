@@ -9,6 +9,8 @@ from typing import Any
 
 from _common import (
     QUALITY_SCORE_COLUMNS,
+    SCREEN_RECORDING_SQL,
+    SCREENSHOT_SQL,
     PhotosDB,
     computed_scores_sql,
     detect_face_schema,
@@ -72,12 +74,17 @@ def analyze_library(db_path: str | None = None) -> dict[str, Any]:
         """)
         by_kind = {get_asset_kind_name(row["ZKIND"]): row["count"] for row in cursor.fetchall()}
 
-        # Screenshots
-        cursor.execute("""
-            SELECT COUNT(*) as count FROM ZASSET
-            WHERE ZTRASHEDSTATE != 1 AND ZISDETECTEDSCREENSHOT = 1
+        # Screenshots (photos) and screen recordings (videos with the same flag)
+        cursor.execute(f"""
+            SELECT
+                SUM({SCREENSHOT_SQL}) AS screenshots,
+                SUM({SCREEN_RECORDING_SQL}) AS screen_recordings
+            FROM ZASSET a
+            WHERE a.ZTRASHEDSTATE != 1
         """)
-        screenshot_count = cursor.fetchone()["count"]
+        flagged = cursor.fetchone()
+        screenshot_count = flagged["screenshots"] or 0
+        screen_recording_count = flagged["screen_recordings"] or 0
 
         # Favorites
         cursor.execute("""
@@ -240,6 +247,7 @@ def analyze_library(db_path: str | None = None) -> dict[str, Any]:
             "by_type": {
                 **by_kind,
                 "screenshots": screenshot_count,
+                "screen_recordings": screen_recording_count,
                 "favorites": favorites_count,
                 "hidden": hidden_count,
                 "bursts": burst_count,
@@ -269,7 +277,7 @@ def format_summary(analysis: dict[str, Any]) -> str:
 
     lines.append("By Type:")
     by_type = analysis["by_type"]
-    for key in ["photo", "video", "screenshots", "favorites", "hidden", "bursts", "with_location"]:
+    for key in ["photo", "video", "screenshots", "screen_recordings", "favorites", "hidden", "bursts", "with_location"]:
         if (by_type.get(key) or 0) > 0:
             lines.append(f"  {key.title()}: {by_type[key]:,}")
     lines.append("")

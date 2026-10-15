@@ -1,6 +1,6 @@
 # Junk Finder — `junk_finder.py`
 
-Identify cleanup candidates: screenshots, low-quality photos, burst leftovers, duplicates.
+Identify cleanup candidates: screenshots, screen recordings, low-quality photos, burst leftovers, duplicates.
 
 ```bash
 python3 scripts/junk_finder.py [--screenshot-age DAYS] [--quality-threshold N] [--human]
@@ -21,6 +21,7 @@ python3 scripts/junk_finder.py [--screenshot-age DAYS] [--quality-threshold N] [
 Found:
   📸 Screenshots: 328
      └─ Old (>30 days): 287
+  🎥 Screen Recordings: 12
   📉 Low Quality: 156
   📸 Burst Leftovers: 1,089
   👥 Possible Duplicates: 45
@@ -29,11 +30,12 @@ Estimated Savings:
   Conservative: 2.3 GB
     (Old screenshots + burst leftovers)
   Aggressive: 5.7 GB
-    (All screenshots + low quality + bursts + ~50% of duplicates)
+    (All screenshots + screen recordings + low quality + bursts + ~50% of duplicates)
 ```
 
 **What It Finds:**
-- **Screenshots** — Detected via `ZISDETECTEDSCREENSHOT` flag
+- **Screenshots** — Photos with the `ZISDETECTEDSCREENSHOT` flag
+- **Screen recordings** — Videos with the same flag, listed separately and never counted as screenshots
 - **Old screenshots** — Screenshots older than specified age (safe to delete)
 - **Low quality** — Photos with low quality scores (high failure/noise, low composition/lighting)
 - **Burst leftovers** — Unpicked photos from burst sequences

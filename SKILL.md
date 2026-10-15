@@ -32,7 +32,7 @@ All are `python3 scripts/<command>.py`. Sensitivity of the output: 🔴 high, �
 | Command | Use it for | Output | Reference |
 | --- | --- | --- | --- |
 | `library_analysis` | Big picture: counts, storage, date range, top people, quality distribution | 🟡 | [library_analysis.md](references/commands/library_analysis.md) |
-| `junk_finder` | Screenshots (old and all), low-quality photos, burst leftovers, duplicates, with savings estimates | 🟡 | [junk_finder.md](references/commands/junk_finder.md) |
+| `junk_finder` | Screenshots (old and all), screen recordings, low-quality photos, burst leftovers, duplicates, with savings estimates | 🟡 | [junk_finder.md](references/commands/junk_finder.md) |
 | `duplicate_finder` | Duplicate groups (Apple's detection + timestamp/dimension match) with a keep recommendation | 🟡 | [duplicate_finder.md](references/commands/duplicate_finder.md) |
 | `storage_analyzer` | Storage by year, type and format; growth trends; largest items | 🟡 | [storage_analyzer.md](references/commands/storage_analyzer.md) |
 | `timeline_recap` | Narrative recap of a date range, clustered into events with people, places and scenes | 🟠 | [timeline_recap.md](references/commands/timeline_recap.md) |

@@ -1,13 +1,13 @@
 # Cleanup Executor — `cleanup_executor.py`
 
-Actually move junk photos to trash via AppleScript. Supports old screenshots, burst leftovers, low quality, and duplicates. All items go to Recently Deleted (recoverable for 30 days).
+Actually move junk photos to trash via AppleScript. Supports old screenshots, screen recordings, burst leftovers, low quality, and duplicates. All items go to Recently Deleted (recoverable for 30 days).
 
 ```bash
 python3 scripts/cleanup_executor.py --category CATEGORY [--execute --confirm TOKEN] [--human]
 ```
 
 **Options:**
-- `--category` — What to clean up: `old_screenshots`, `all_screenshots`, `burst_leftovers`, `low_quality`, `duplicates`
+- `--category` — What to clean up: `old_screenshots`, `all_screenshots`, `screen_recordings`, `burst_leftovers`, `low_quality`, `duplicates`. The screenshot categories are photos only; Photos flags screen recordings the same way, so they're a separate category
 - `--screenshot-age N` — Screenshot age in days for old_screenshots (default: 30)
 - `--quality-threshold N` — Quality threshold for low_quality (default: 0.3)
 - `--limit N` — Maximum items to process (default: 500)

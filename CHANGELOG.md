@@ -8,6 +8,22 @@ release is cut.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Screen recordings are no longer treated as screenshots** (#37). Photos flags
+  screen recordings with the same `ZISDETECTEDSCREENSHOT` as screenshots, so
+  `cleanup_executor --category old_screenshots/all_screenshots` selected screen
+  recordings (videos) too, and junk, library and storage reports counted them
+  as screenshots. Found on a real macOS 26 library, where an old-screenshots
+  preview included a `.mov`. Screenshot categories and counts are now photos
+  only. **This changes which items those cleanup categories select.**
+
+### Added
+
+- `screen_recordings` as its own `cleanup_executor` category and `junk_finder`
+  section, plus `screen_recordings` counts in `library_analysis` (`by_type`) and
+  `storage_analyzer` (`by_source`).
+
 ## [1.1.0] - 2026-10-15
 
 "Solid ground": roadmap items T0.9, T0.16, T1.1, T1.2, T1.4, T1.9, T1.10, T1.19,
