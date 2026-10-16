@@ -13,8 +13,10 @@ release is cut.
 - **`timeline_recap` on macOS 26 is fast again.** Each event reopened and
   queried Photos' search index for its scene labels, so a whole-library
   timeline took about 9 s on a real 15.7k-photo library. Labels are now
-  loaded once per run (`IndexLabels`), about 15x faster on a synthetic
-  2,000-event library. The same applies to `on_this_day`.
+  loaded in one batch for exactly the photos the command shows
+  (`IndexLabels.preload`), about 15x faster on a synthetic 2,000-event
+  library. `on_this_day` reads only the photos it shows, not the whole
+  library's labels.
 
 ### Added
 

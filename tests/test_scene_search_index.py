@@ -261,3 +261,20 @@ def test_timeline_opens_the_index_once_for_all_events(tmp_path):
     assert events > 2, "fixture should span several events"
     # One open to choose the source (scene_source) and one to load every label; none per event.
     assert len(opened) <= 2
+
+
+def test_only_the_requested_photos_labels_are_loaded(tmp_path):
+    """on_this_day shows a few photos; it must not read every photo's labels from the index."""
+    lib = make_library(tmp_path)
+    requested = []
+    real = SearchIndex.labels_for_uuids
+
+    def recording(self, uuids):
+        uuids = list(uuids)
+        requested.extend(uuids)
+        return real(self, uuids)
+
+    with patch.object(SearchIndex, "labels_for_uuids", recording):
+        run("on_this_day", "--library", str(lib), "--date", "2026-03-03")
+    # Only the March-3 photos (1 and 2) were asked about, not the whole indexed library (1, 2, 7, 9).
+    assert set(requested) == {UUID(1), UUID(2)}

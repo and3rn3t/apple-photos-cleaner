@@ -144,18 +144,22 @@ class SearchIndex:
     def inventory(self) -> dict[str, set[str]]:
         return self._labels_with_uuids(None)
 
-    def labels_by_uuid(self) -> dict[str, set[str]]:
-        """Every indexed asset's labels, in one query (used for per-event counts across a whole run)."""
-        labels: dict[str, set[str]] = {}
-        for label, uuid_0, uuid_1 in self.conn.execute(
-            """
-            SELECT g.content_string, a.uuid_0, a.uuid_1
-            FROM groups g JOIN ga ON ga.groupid = g.rowid JOIN assets a ON a.rowid = ga.assetid
-            WHERE g.category = ?
-            """,
-            (LABEL_CATEGORY,),
-        ):
-            labels.setdefault(halves_to_uuid(uuid_0, uuid_1), set()).add(clean_label(label))
+    def labels_for_uuids(self, uuids: Iterable[str]) -> dict[str, set[str]]:
+        """uuid -> labels for just *uuids*, in chunked queries on the assets(uuid_0, uuid_1) index."""
+        wanted = {uuid_to_halves(u): u for u in uuids}
+        labels: dict[str, set[str]] = {u: set() for u in wanted.values()}
+        firsts = sorted({first for first, _ in wanted})
+        for chunk in _chunks(firsts):
+            for label, uuid_0, uuid_1 in self.conn.execute(
+                f"""
+                SELECT g.content_string, a.uuid_0, a.uuid_1
+                FROM assets a JOIN ga ON ga.assetid = a.rowid JOIN groups g ON g.rowid = ga.groupid
+                WHERE g.category = ? AND a.uuid_0 IN ({",".join("?" * len(chunk))})
+                """,
+                [LABEL_CATEGORY, *chunk],
+            ):
+                if (asset_uuid := wanted.get((uuid_0, uuid_1))) is not None:
+                    labels[asset_uuid].add(clean_label(label))
         return labels
 
     def labels_for(self, uuids: Iterable[str]) -> Counter[str]:
@@ -205,27 +209,32 @@ def uuids_for(conn: sqlite3.Connection, asset_ids: list[int]) -> dict[int, str]:
 
 
 class IndexLabels:
-    """Scene labels per photo from the search index, loaded once and reused for every event of a run.
+    """Scene labels per photo from the search index, loaded in bulk for exactly the photos a run uses.
 
     Opening the index and querying it per event made a whole-library timeline_recap take ~9 s on a
-    real 15.7k-photo macOS 26 library; one query up front makes each event a dictionary lookup.
+    real 15.7k-photo macOS 26 library. Callers preload() every photo they will ask about (one batch
+    of queries); top() then counts in memory. Only those photos' labels are read, never the whole
+    library's.
     """
 
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
-        self._labels: dict[str, set[str]] | None = None
-        self._uuid_of: dict[int, str] = {}
+        self._labels: dict[int, set[str]] = {}
+
+    def preload(self, asset_ids: Iterable[int]) -> None:
+        missing = [pk for pk in dict.fromkeys(asset_ids) if pk not in self._labels]
+        if not missing:
+            return
+        uuid_of = uuids_for(self._conn, missing)
+        with SearchIndex(self._conn.db_file) as index:  # type: ignore[attr-defined]
+            by_uuid = index.labels_for_uuids(uuid_of.values())
+        for pk in missing:
+            self._labels[pk] = by_uuid.get(uuid_of.get(pk, ""), set())
 
     def top(self, asset_ids: list[int], limit: int = 5) -> list[dict]:
-        """[{scene, count}] for photos *asset_ids*, most common first."""
+        """[{scene, count}] for photos *asset_ids*, most common first (loads any not preloaded)."""
         if not asset_ids:
             return []
-        if self._labels is None:
-            with SearchIndex(self._conn.db_file) as index:  # type: ignore[attr-defined]
-                self._labels = index.labels_by_uuid()
-        if missing := [pk for pk in asset_ids if pk not in self._uuid_of]:
-            self._uuid_of.update(uuids_for(self._conn, missing))
-        counts = Counter(
-            label for pk in asset_ids for label in self._labels.get(self._uuid_of.get(pk, ""), ()) if label
-        )
+        self.preload(asset_ids)
+        counts = Counter(label for pk in asset_ids for label in self._labels[pk] if label)
         return [{"scene": label, "count": n} for label, n in counts.most_common(limit)]

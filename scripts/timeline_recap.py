@@ -71,7 +71,7 @@ def generate_timeline(
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
         # Scene names come from ZSCENECLASSIFICATION or, on macOS 26, Photos' search index (see _scenes).
         scenes_from = scene_source(conn)
-        index_labels = IndexLabels(conn)  # loads lazily, once, only if the index is the source
+        index_labels = IndexLabels(conn)  # filled in bulk below, only if the index is the source
         has_scenes = scenes_from is not None
         if scenes_from is None:
             degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
@@ -175,6 +175,8 @@ def generate_timeline(
             events.append(current_event)
 
         # Enrich events with additional data
+        if scenes_from == SEARCH_INDEX:  # one batch for every photo in the timeline
+            index_labels.preload(p["id"] for event in events for p in event["photos"])
         for event in events:
             photo_ids = [p["id"] for p in event["photos"]]
             event["photo_count"] = len(photo_ids)

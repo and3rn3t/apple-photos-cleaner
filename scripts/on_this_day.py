@@ -85,7 +85,7 @@ def on_this_day(
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
         # Scene names come from ZSCENECLASSIFICATION or, on macOS 26, Photos' search index (see _scenes).
         scenes_from = scene_source(conn)
-        index_labels = IndexLabels(conn)  # loads lazily, once, only if the index is the source
+        index_labels = IndexLabels(conn)  # filled in bulk below, only if the index is the source
         has_scenes = scenes_from is not None
         if scenes_from is None:
             degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
@@ -180,6 +180,8 @@ def on_this_day(
 
         # Enrich each year group with people and scenes
         year_summaries = []
+        if scenes_from == SEARCH_INDEX:  # one batch for every photo across the years shown
+            index_labels.preload(p["id"] for photos in by_year.values() for p in photos)
         for year_str in sorted(by_year.keys()):
             photos = by_year[year_str]
             photo_ids = [p["id"] for p in photos]
