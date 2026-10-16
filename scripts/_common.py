@@ -15,7 +15,7 @@ import sqlite3
 import sys
 import traceback
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import IntEnum
 from pathlib import Path
 from typing import Any
@@ -452,9 +452,38 @@ def render_csv(data: Any) -> str:
     return buffer.getvalue()
 
 
+# Version of the result envelope below. Adding a field is a minor change; removing or reshaping one
+# is a major one, and bumps this (see RELEASING.md).
+SCHEMA_VERSION = 1
+
+
+def command_name() -> str:
+    """The running command, the same whether invoked as scripts/x.py or `photos-cleaner x`."""
+    name = os.path.basename(sys.argv[0]).removesuffix(".py").removeprefix("photos-cleaner ")
+    return name.replace("-", "_") or "unknown"
+
+
+def with_envelope(data: Any) -> Any:
+    """Prefix a result with the fields every result shares (ROADMAP T1.7).
+
+    ``schema_version``, ``command``, ``generated_at`` (UTC) and ``warnings`` (deprecations and other
+    non-fatal notices; see CONTRIBUTING.md) come first; the command's own fields follow unchanged.
+    """
+    if not isinstance(data, dict):
+        return data
+    envelope = {
+        "schema_version": SCHEMA_VERSION,
+        "command": command_name(),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "warnings": data.get("warnings", []),
+    }
+    return {**envelope, **{key: value for key, value in data.items() if key not in envelope}}
+
+
 def emit_result(data: Any, args: argparse.Namespace) -> None:
-    """Write a result as args.format (json, md or csv) to args.output, or stdout."""
-    title = os.path.basename(sys.argv[0]).removesuffix(".py") or "result"
+    """Write a result, with its envelope, as args.format (json, md or csv) to args.output, or stdout."""
+    data = with_envelope(data)
+    title = command_name()
     if args.format == "md":
         text = render_markdown(data, title)
     elif args.format == "csv":

@@ -86,3 +86,41 @@ def test_output_file(tmp_path):
     assert code == 0
     assert stdout == ""
     assert out.read_text().startswith("# ")
+
+
+@pytest.mark.parametrize("script", SCRIPTS)
+def test_every_result_has_the_envelope(script, tmp_path):
+    """ROADMAP T1.7: the same leading fields on every structured result (additive; see SCHEMA_VERSION)."""
+    from datetime import datetime
+
+    from _common import SCHEMA_VERSION
+
+    code, out = run(script, db_without(tmp_path, None, None), tmp_path)
+    assert code == 0
+    result = json.loads(out)
+    assert list(result)[:4] == ["schema_version", "command", "generated_at", "warnings"]
+    assert result["schema_version"] == SCHEMA_VERSION
+    assert result["command"] == script
+    assert datetime.fromisoformat(result["generated_at"]).utcoffset().total_seconds() == 0
+    assert result["warnings"] == []
+
+
+def test_envelope_names_the_command_through_the_dispatcher(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    out = subprocess.run(
+        [sys.executable, str(root / "photos_cleaner.py"), "storage-analyzer", "--db-path", db_without(tmp_path, None, None).as_posix(), "-q"],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert json.loads(out.stdout)["command"] == "storage_analyzer"
+
+
+def test_envelope_keeps_existing_warnings():
+    from _common import with_envelope
+
+    wrapped = with_envelope({"warnings": [{"code": "deprecated"}], "summary": {}})
+    assert wrapped["warnings"] == [{"code": "deprecated"}]
+    assert list(wrapped) == ["schema_version", "command", "generated_at", "warnings", "summary"]

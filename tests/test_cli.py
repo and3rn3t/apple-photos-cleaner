@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The unified `photos-cleaner` entry point (ROADMAP T1.6)."""
 
+import json
 import re
 import sqlite3
 import subprocess
@@ -65,7 +66,8 @@ def test_dispatch_matches_running_the_script(db, command):
         timeout=60,
     )
     assert via_cli.returncode == direct.returncode == 0
-    assert via_cli.stdout == direct.stdout
+    # Identical apart from when it ran; `command` is the same name either way.
+    assert {**json.loads(via_cli.stdout), "generated_at": None} == {**json.loads(direct.stdout), "generated_at": None}
 
 
 def test_module_form(db):
