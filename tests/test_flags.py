@@ -54,6 +54,11 @@ def test_shared_flags(command):
     assert (human.dest, human.const) == ("format", "human")
 
 
+def stable(result: dict) -> dict:
+    """A result without its timestamp, for comparing two runs."""
+    return {key: value for key, value in result.items() if key != "generated_at"}
+
+
 def cli(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, *args], capture_output=True, text=True, cwd=ROOT, timeout=60)
 
@@ -89,7 +94,7 @@ def test_quiet_leaves_only_the_result(db, script):
     loud, quiet = cli(*run), cli(*run, "--quiet")
     assert loud.stderr.strip(), "without --quiet a human summary goes to stderr"
     assert quiet.stderr == ""
-    assert json.loads(quiet.stdout) == json.loads(loud.stdout)
+    assert stable(json.loads(quiet.stdout)) == stable(json.loads(loud.stdout))
 
 
 def test_quiet_still_reports_errors(tmp_path):

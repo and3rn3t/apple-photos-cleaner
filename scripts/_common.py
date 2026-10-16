@@ -15,7 +15,7 @@ import sqlite3
 import sys
 import traceback
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import IntEnum
 from pathlib import Path
 from typing import Any
@@ -399,6 +399,10 @@ def render_markdown(data: Any, title: str) -> str:
                 lines.append("")
 
     if isinstance(data, dict):
+        # The envelope leads, as its own block, whatever the command's fields look like.
+        if all(key in data for key in ENVELOPE_KEYS):
+            section({key: data[key] for key in ENVELOPE_KEYS}, 2)
+            data = {key: value for key, value in data.items() if key not in ENVELOPE_KEYS}
         section(data, 2)
     else:
         lines.append(md_cell(data))
@@ -422,7 +426,9 @@ def render_csv(data: Any) -> str:
     """Every list of objects in the result, at any depth, as one table with a `section` column.
 
     ``section`` always holds the row's dotted source path; a row's own ``section`` field (as in
-    ``degraded`` entries) is kept as ``entry_section``. Text that a spreadsheet would run as a
+    ``degraded`` entries) is kept as ``entry_section``. A result with the envelope gets a first
+    ``section=envelope`` row holding schema_version, command and generated_at; its warnings, if any,
+    are ``warnings`` rows. Text that a spreadsheet would run as a
     formula is prefixed with ``'``. Top-level summary values aren't rows, so CSV leaves them out
     (use json or md for those).
     """
@@ -430,6 +436,9 @@ def render_csv(data: Any) -> str:
     import io
 
     rows: list[dict] = []
+    if isinstance(data, dict) and all(key in data for key in ENVELOPE_KEYS):
+        # First row carries the envelope, so it survives even when the result has no other rows.
+        rows.append({"section": "envelope", **{key: data[key] for key in ENVELOPE_KEYS if key != "warnings"}})
 
     def collect(value: Any, path: str) -> None:
         if _is_table(value):
@@ -452,9 +461,40 @@ def render_csv(data: Any) -> str:
     return buffer.getvalue()
 
 
+# Leading fields of every structured result (with_envelope).
+ENVELOPE_KEYS = ("schema_version", "command", "generated_at", "warnings")
+# Version of the result envelope below. Adding a field is a minor change; removing or reshaping one
+# is a major one, and bumps this (see RELEASING.md).
+SCHEMA_VERSION = 1
+
+
+def command_name() -> str:
+    """The running command, the same whether invoked as scripts/x.py or `photos-cleaner x`."""
+    name = os.path.basename(sys.argv[0]).removesuffix(".py").removeprefix("photos-cleaner ")
+    return name.replace("-", "_") or "unknown"
+
+
+def with_envelope(data: Any) -> Any:
+    """Prefix a result with the fields every result shares (ROADMAP T1.7).
+
+    ``schema_version``, ``command``, ``generated_at`` (UTC) and ``warnings`` (deprecations and other
+    non-fatal notices; see CONTRIBUTING.md) come first; the command's own fields follow unchanged.
+    """
+    if not isinstance(data, dict):
+        return data
+    envelope = {  # keys and order: ENVELOPE_KEYS
+        "schema_version": SCHEMA_VERSION,
+        "command": command_name(),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "warnings": data.get("warnings", []),
+    }
+    return {**envelope, **{key: value for key, value in data.items() if key not in envelope}}
+
+
 def emit_result(data: Any, args: argparse.Namespace) -> None:
-    """Write a result as args.format (json, md or csv) to args.output, or stdout."""
-    title = os.path.basename(sys.argv[0]).removesuffix(".py") or "result"
+    """Write a result, with its envelope, as args.format (json, md or csv) to args.output, or stdout."""
+    data = with_envelope(data)
+    title = command_name()
     if args.format == "md":
         text = render_markdown(data, title)
     elif args.format == "csv":

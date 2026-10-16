@@ -73,10 +73,11 @@ def test_every_command_supports_md_and_csv(script, tmp_path):
 
     code, text = run(script, db, tmp_path, extra=["--format", "csv"])
     assert code == 0
-    rows = list(csv.DictReader(io.StringIO(text)))
-    expected = sum(len(table) for _, table in tables(result))
-    assert len(rows) == expected, f"{script}: {len(rows)} CSV rows for {expected} result rows"
-    assert {r["section"] for r in rows} == {path for path, _ in tables(result)}
+    rows = list(csv.DictReader(io.StringIO(text, newline="")))
+    expected = 1 + sum(len(table) for _, table in tables(result))  # + the envelope row
+    assert len(rows) == expected, f"{script}: {len(rows)} CSV rows for {expected} expected"
+    assert {r["section"] for r in rows} == {"envelope"} | {path for path, _ in tables(result)}
+    assert (rows[0]["section"], rows[0]["command"]) == ("envelope", script)
 
 
 def test_output_file(tmp_path):
@@ -86,3 +87,71 @@ def test_output_file(tmp_path):
     assert code == 0
     assert stdout == ""
     assert out.read_text().startswith("# ")
+
+
+@pytest.mark.parametrize("script", SCRIPTS)
+def test_every_result_has_the_envelope(script, tmp_path):
+    """ROADMAP T1.7: the same leading fields on every structured result (additive; see SCHEMA_VERSION)."""
+    from datetime import datetime
+
+    from _common import SCHEMA_VERSION
+
+    code, out = run(script, db_without(tmp_path, None, None), tmp_path)
+    assert code == 0
+    result = json.loads(out)
+    assert list(result)[:4] == ["schema_version", "command", "generated_at", "warnings"]
+    assert result["schema_version"] == SCHEMA_VERSION
+    assert result["command"] == script
+    assert datetime.fromisoformat(result["generated_at"]).utcoffset().total_seconds() == 0
+    assert result["warnings"] == []
+
+
+def test_envelope_names_the_command_through_the_dispatcher(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    out = subprocess.run(
+        [sys.executable, str(root / "photos_cleaner.py"), "storage-analyzer", "--db-path", db_without(tmp_path, None, None).as_posix(), "-q"],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert json.loads(out.stdout)["command"] == "storage_analyzer"
+
+
+def test_envelope_keeps_existing_warnings():
+    from _common import with_envelope
+
+    wrapped = with_envelope({"warnings": [{"code": "deprecated"}], "summary": {}})
+    assert wrapped["warnings"] == [{"code": "deprecated"}]
+    assert list(wrapped) == ["schema_version", "command", "generated_at", "warnings", "summary"]
+
+
+class TestEnvelopeRendering:
+    """The envelope must lead in Markdown and survive in CSV, with or without other content."""
+
+    @pytest.mark.parametrize("warnings", [[], [{"code": "deprecated", "message": "use --format"}]])
+    def test_markdown_envelope_comes_first(self, warnings):
+        from _common import with_envelope
+
+        result = with_envelope({"warnings": warnings, "output_dir": "/x", "exported": 3, "items": [{"a": 1}]})
+        md = render_markdown(result, "smart_export")
+        order = [md.index(marker) for marker in ("**schema_version**", "**command**", "**generated_at**", "warnings")]
+        assert order == sorted(order)
+        assert max(order) < md.index("**output_dir**") < md.index("## items")
+
+    def test_csv_keeps_the_envelope_even_without_rows(self):
+        from _common import with_envelope
+
+        rows = list(csv.DictReader(io.StringIO(render_csv(with_envelope({"summary": {"count": 0}})), newline="")))
+        assert len(rows) == 1
+        assert rows[0]["section"] == "envelope"
+        assert rows[0]["schema_version"] == "1" and rows[0]["generated_at"]
+
+    def test_csv_warnings_are_rows(self):
+        from _common import with_envelope
+
+        result = with_envelope({"warnings": [{"code": "deprecated", "message": "m"}]})
+        rows = list(csv.DictReader(io.StringIO(render_csv(result), newline="")))
+        assert [r["section"] for r in rows] == ["envelope", "warnings"]
+        assert rows[1]["code"] == "deprecated"

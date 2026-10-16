@@ -10,6 +10,16 @@ release is cut.
 
 ### Added
 
+- **Result envelope** (T1.7, first part). Every JSON, Markdown and CSV result
+  now starts with `schema_version` (1), `command`, `generated_at` (UTC) and
+  `warnings`, ahead of the command's own fields, which are unchanged. In
+  Markdown it is the leading block. In CSV it is a first `section=envelope`
+  row, present even when the result has no other rows, and any warnings follow
+  as `warnings` rows. This is
+  additive, so minor. `warnings` is where deprecations land, as the
+  deprecation policy describes. Published JSON Schema files are the remaining
+  part of T1.7.
+
 - **Markdown and CSV output** (T2.23). Every command accepts
   `--format md|csv`, rendered generically from the JSON result so all
   commands support them.
