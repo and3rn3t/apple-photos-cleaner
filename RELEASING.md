@@ -55,8 +55,9 @@ Raising the Python floor is called out in the CHANGELOG even when it's a patch.
      git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z
      ```
 
-   - Release Drafter keeps a draft GitHub Release up to date. Edit it to match
-     the CHANGELOG section, point it at the tag, and publish it.
+   - Release Drafter keeps a draft named "Next release (draft)" up to date. It doesn't guess the
+     version: publish it with the tag and title, using the CHANGELOG section as its notes, e.g.
+     `gh release edit <draft-tag-or-id> --tag vX.Y.Z --title "vX.Y.Z — <theme>" --notes-file notes.md --draft=false --latest`.
 
 ## If a publish goes wrong
 

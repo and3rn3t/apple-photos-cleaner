@@ -1,5 +1,7 @@
-name-template: 'v$RESOLVED_VERSION'
-tag-template: 'v$RESOLVED_VERSION'
+# The version comes from SKILL.md (RELEASING.md), not from PR labels: a "fix" PR that adds a JSON
+# field is a minor release, which labels can't express. So the draft doesn't guess a version or
+# tag. Publishing the release sets both (RELEASING.md step 8).
+name-template: 'Next release (draft)'
 
 categories:
   - title: '🚀 Features'
@@ -12,15 +14,6 @@ categories:
     labels: ['chore', 'dependencies', 'ci']
   - title: '📝 Documentation'
     labels: ['documentation', 'docs']
-
-version-resolver:
-  major:
-    labels: ['breaking']
-  minor:
-    labels: ['feature', 'enhancement']
-  patch:
-    labels: ['fix', 'bugfix', 'bug', 'chore', 'dependencies', 'security', 'docs']
-  default: patch
 
 template: |
   ## What's Changed
