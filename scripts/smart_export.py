@@ -504,9 +504,16 @@ match the current plan, or nothing is written.
             else:
                 print(f"✓ {exported:,} exported", file=progress)
 
-        print(f"\nExport complete: {total_exported:,} exported, {total_skipped:,} skipped.", file=progress)
+        # The outcome isn't progress: in human mode it's the result (stdout, even with --quiet),
+        # in JSON mode it's in the result object; skipped items are a problem (always stderr).
+        if args.format == "human":
+            print(f"\nExport complete: {total_exported:,} exported, {total_skipped:,} skipped.")
         if total_skipped:
-            print("Skipped items could not be resolved in Photos, or their filename no longer matches.", file=progress)
+            print(
+                f"{total_skipped:,} item(s) skipped: they could not be resolved in Photos, "
+                "or their filename no longer matches.",
+                file=sys.stderr,
+            )
         if args.format == "json":
             output_json(
                 {

@@ -596,10 +596,13 @@ Categories:
         data["next_command"] = execute_command(args, token)
 
         if not data["candidates"]:
-            if not args.quiet:
-                print(f"No cleanup candidates found for category: {args.category}", file=sys.stderr)
-            if args.format == "json":
+            message = f"No cleanup candidates found for category: {args.category}"
+            if args.format == "human":
+                print(message)  # the result itself, so --quiet doesn't drop it
+            else:
                 output_json(data, args.output)
+                if not args.quiet:
+                    print(message, file=sys.stderr)
             return ExitCode.OK
 
         if args.execute and args.confirm != token:

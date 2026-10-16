@@ -108,3 +108,49 @@ def test_smart_export_output_file(db, tmp_path):
     assert result.returncode == 0
     assert result.stdout == ""
     assert "confirm_token" in json.loads(out.read_text())
+
+
+class TestQuietNeverDropsTheResult:
+    """--quiet removes diagnostics only; the result (or a real problem) must still reach the user."""
+
+    def test_cleanup_with_no_candidates(self, tmp_path):
+        path = tmp_path / "Photos.sqlite"
+        conn = sqlite3.connect(path)
+        create_full_test_db().backup(conn)
+        conn.execute("UPDATE ZASSET SET ZISDETECTEDSCREENSHOT = 0")
+        conn.commit()
+        conn.close()
+        run = [str(ROOT / "scripts" / "cleanup_executor.py"), "--db-path", str(path), "--category", "all_screenshots"]
+
+        human = cli(*run, "--human", "--quiet")
+        assert human.returncode == 0
+        assert "No cleanup candidates found" in human.stdout
+
+        machine = cli(*run, "--quiet")
+        assert json.loads(machine.stdout)["candidates"] == []
+        assert machine.stderr == ""
+
+    def test_export_outcome_and_skips(self, db, tmp_path):
+        import os
+        import stat
+
+        stub_dir = tmp_path / "bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "osascript"
+        stub.write_text('#!/bin/sh\necho "EXPORTED:0 SKIPPED:1"\n')
+        stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+        env = {**os.environ, "PATH": f"{stub_dir}{os.pathsep}{os.environ['PATH']}"}
+
+        base = [
+            sys.executable, str(ROOT / "scripts" / "smart_export.py"),
+            "--db-path", db, "--output-dir", str(tmp_path / "export"), "--favorites",
+        ]  # fmt: skip
+        plan = json.loads(cli(*base[1:], "--plan-only", "--format", "json").stdout)
+        result = subprocess.run(
+            [*base, "--confirm", plan["confirm_token"], "--quiet"],
+            capture_output=True, text=True, cwd=ROOT, env=env, timeout=60,
+        )  # fmt: skip
+        assert result.returncode == 0
+        assert "Export complete: 0 exported, 1 skipped." in result.stdout
+        assert "1 item(s) skipped" in result.stderr
+        assert "Exporting" not in result.stdout + result.stderr  # progress is what --quiet drops
