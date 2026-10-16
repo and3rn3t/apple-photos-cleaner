@@ -27,7 +27,7 @@ Typical first pass: `library_analysis.py` for the overview → `junk_finder.py` 
 
 ## Commands
 
-All are `python3 scripts/<command>.py`. Sensitivity of the output: 🔴 high, 🟠 medium, 🟡 low (see [Privacy](#privacy)).
+All are `python3 scripts/<command>.py`, or equivalently `python3 photos_cleaner.py <command>` (`photos-cleaner <command>` when installed with `pipx install .`; `--help` lists them). Sensitivity of the output: 🔴 high, 🟠 medium, 🟡 low (see [Privacy](#privacy)).
 
 | Command | Use it for | Output | Reference |
 | --- | --- | --- | --- |

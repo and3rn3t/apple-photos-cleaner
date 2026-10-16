@@ -8,6 +8,22 @@ release is cut.
 
 ## [Unreleased]
 
+### Added
+
+- **One entry point: `photos-cleaner`** (T1.6). `python3 photos_cleaner.py <command>`
+  or `python3 -m photos_cleaner <command>` runs any command (`junk-finder` and
+  `junk_finder` both work), and `--help` lists them all, with the mutating ones
+  marked. `pipx install .` provides a `photos-cleaner` command. The scripts
+  install as a private `photos_cleaner_commands` package, so their module names
+  stay out of `site-packages`. Running `python3 scripts/<command>.py` still
+  works, and each command's flags, output and exit codes are unchanged.
+
+### Changed
+
+- The known schema fingerprints moved from `references/` to
+  `scripts/schema-fingerprints.json`, so they ship with an installed copy and
+  an installed `doctor` recognizes known libraries.
+
 ## [1.3.0] - 2026-10-15
 
 Scene search works again on macOS 26. Its labels now come from Photos' own
