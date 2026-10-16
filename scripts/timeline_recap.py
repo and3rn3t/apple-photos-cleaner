@@ -12,6 +12,7 @@ from typing import Any
 from _common import (
     ExitCode,
     PhotosDB,
+    add_common_args,
     coredata_to_local,
     detect_face_schema,
     format_date_range,
@@ -368,19 +369,15 @@ Examples:
   %(prog)s --start-date 2025-03-01 --cluster-hours 8 --narrative
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
+    add_common_args(parser, human_aliases=("--human", "--narrative"))
     parser.add_argument("--start-date", help="Start date (YYYY-MM-DD, local capture time)")
     parser.add_argument("--end-date", help="End date (YYYY-MM-DD, local capture time, inclusive)")
     parser.add_argument(
         "--cluster-hours", type=int, default=4, help="Hours between photos to consider separate events (default: 4)"
     )
-    parser.add_argument("--narrative", action="store_true", help="Output narrative text instead of JSON")
-    parser.add_argument("-o", "--output", help="Output file")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
 
     args = parser.parse_args()
-    setup_logging(verbose=args.verbose)
+    setup_logging(verbose=args.verbose, quiet=args.quiet)
 
     try:
         db_path = args.db_path or args.library
@@ -392,18 +389,19 @@ Examples:
             cluster_hours=args.cluster_hours,
         )
 
-        if args.narrative:
+        if args.format == "human":
             output_text = format_narrative(timeline) + format_degraded(timeline)
             if args.output:
                 with open(args.output, "w") as f:
                     f.write(output_text)
-                print(f"Written to: {args.output}", file=sys.stderr)
+                if not args.quiet:
+                    print(f"Written to: {args.output}", file=sys.stderr)
             else:
                 print(output_text)
         else:
             output_json(timeline, args.output)
 
-            if not args.output:
+            if not args.output and not args.quiet:
                 print("\n" + (format_narrative(timeline) + format_degraded(timeline)), file=sys.stderr)
 
         return 0

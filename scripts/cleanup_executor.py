@@ -26,6 +26,7 @@ from _common import (
     SCREENSHOT_SQL,
     ExitCode,
     PhotosDB,
+    add_common_args,
     build_identifier_lists,
     coredata_to_local,
     display_name,
@@ -504,11 +505,11 @@ def execute_command(args: argparse.Namespace, token: str) -> str:
 
 
 def emit_preview(data: dict[str, Any], args: argparse.Namespace) -> None:
-    if args.human:
+    if args.format == "human":
         print(format_summary(data))
         return
     output_json(data, args.output)
-    if not args.output:
+    if not args.output and not args.quiet:
         print("\n" + format_summary(data), file=sys.stderr)
 
 
@@ -541,8 +542,7 @@ Categories:
     deleted; you have 30 days to recover them in Photos.app.
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
+    add_common_args(parser)
     parser.add_argument(
         "--category",
         required=True,
@@ -573,12 +573,9 @@ Categories:
         default=MAX_BATCH_SIZE,
         help=f"Items per AppleScript batch (default: {MAX_BATCH_SIZE})",
     )
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary")
 
     args = parser.parse_args()
-    setup_logging(verbose=args.verbose)
+    setup_logging(verbose=args.verbose, quiet=args.quiet)
     if args.confirm and not args.execute:
         parser.error("--confirm only applies together with --execute")
 
@@ -599,9 +596,13 @@ Categories:
         data["next_command"] = execute_command(args, token)
 
         if not data["candidates"]:
-            print(f"No cleanup candidates found for category: {args.category}", file=sys.stderr)
-            if not args.human:
+            message = f"No cleanup candidates found for category: {args.category}"
+            if args.format == "human":
+                print(message)  # the result itself, so --quiet doesn't drop it
+            else:
                 output_json(data, args.output)
+                if not args.quiet:
+                    print(message, file=sys.stderr)
             return ExitCode.OK
 
         if args.execute and args.confirm != token:
@@ -625,7 +626,7 @@ Categories:
         )
         result["degraded"] = data["degraded"]
         result["confirm_token"] = token
-        if args.human:
+        if args.format == "human":
             print(format_summary(result))
         else:
             output_json(result, args.output)

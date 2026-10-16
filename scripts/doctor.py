@@ -26,6 +26,7 @@ from _common import (
     DatabaseNotFoundError,
     ExitCode,
     PhotosDB,
+    add_common_args,
     connect_db,
     find_photos_db,
     format_size,
@@ -410,9 +411,7 @@ Examples:
   %(prog)s --schema-dump > schema.sql
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("--format", choices=["human", "json"], default="human", help="Output format (default: human)")
+    add_common_args(parser, default_format="human")
     parser.add_argument(
         "--check-automation",
         action="store_true",
@@ -421,11 +420,9 @@ Examples:
     parser.add_argument(
         "--schema-dump", action="store_true", help="Print the database's table definitions (no rows) and exit"
     )
-    parser.add_argument("-o", "--output", help="Write JSON output to this file")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
 
     args = parser.parse_args()
-    setup_logging(verbose=args.verbose)
+    setup_logging(verbose=args.verbose, quiet=args.quiet)
     path = args.db_path or args.library
 
     try:

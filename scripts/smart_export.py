@@ -10,6 +10,7 @@ See export_with_applescript for the matching rules.
 """
 
 import argparse
+import io
 import os
 import re
 import shlex
@@ -23,6 +24,7 @@ from typing import Any
 from _common import (
     ExitCode,
     PhotosDB,
+    add_common_args,
     build_identifier_lists,
     coredata_to_local,
     detect_face_schema,
@@ -428,8 +430,7 @@ Export writes copies into --output-dir; it never alters the library. Without
 match the current plan, or nothing is written.
         """,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
+    add_common_args(parser, default_format="human")
     parser.add_argument("--output-dir", required=True, help="Output directory for exports")
     parser.add_argument(
         "--organize-by",
@@ -444,14 +445,9 @@ match the current plan, or nothing is written.
     parser.add_argument("--album", help="Export only from this album")
     parser.add_argument("--plan-only", action="store_true", help="Show export plan without actually exporting")
     parser.add_argument("--confirm", metavar="TOKEN", help="Confirmation token from the plan; required to export")
-    parser.add_argument(
-        "--format", choices=["human", "json"], default="human", help="Plan/result output format (default: human)"
-    )
-
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
 
     args = parser.parse_args()
-    setup_logging(verbose=args.verbose)
+    setup_logging(verbose=args.verbose, quiet=args.quiet)
     if args.confirm and args.plan_only:
         parser.error("--confirm and --plan-only are mutually exclusive")
 
@@ -474,7 +470,7 @@ match the current plan, or nothing is written.
 
         if args.plan_only or args.confirm != token:
             if args.format == "json":
-                output_json(plan)
+                output_json(plan, args.output)
             else:
                 print(format_plan(plan))
             if args.plan_only:
@@ -488,7 +484,8 @@ match the current plan, or nothing is written.
             return ExitCode.CONFIRMATION_REQUIRED
 
         # Progress goes to stderr in JSON mode so stdout stays one JSON document.
-        progress = sys.stderr if args.format == "json" else sys.stdout
+        # --quiet drops progress lines; the plan (human) or result (json) is still the output.
+        progress = io.StringIO() if args.quiet else sys.stderr if args.format == "json" else sys.stdout
         if args.format == "human":
             print(format_plan(plan))
         print(f"Exporting to: {args.output_dir}\n", file=progress)
@@ -507,9 +504,16 @@ match the current plan, or nothing is written.
             else:
                 print(f"✓ {exported:,} exported", file=progress)
 
-        print(f"\nExport complete: {total_exported:,} exported, {total_skipped:,} skipped.", file=progress)
+        # The outcome isn't progress: in human mode it's the result (stdout, even with --quiet),
+        # in JSON mode it's in the result object; skipped items are a problem (always stderr).
+        if args.format == "human":
+            print(f"\nExport complete: {total_exported:,} exported, {total_skipped:,} skipped.")
         if total_skipped:
-            print("Skipped items could not be resolved in Photos, or their filename no longer matches.", file=progress)
+            print(
+                f"{total_skipped:,} item(s) skipped: they could not be resolved in Photos, "
+                "or their filename no longer matches.",
+                file=sys.stderr,
+            )
         if args.format == "json":
             output_json(
                 {
@@ -518,7 +522,8 @@ match the current plan, or nothing is written.
                     "exported": total_exported,
                     "skipped": total_skipped,
                     "confirm_token": token,
-                }
+                },
+                args.output,
             )
 
         return ExitCode.OK

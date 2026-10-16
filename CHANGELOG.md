@@ -10,6 +10,15 @@ release is cut.
 
 ### Added
 
+- **Consistent flags** (T1.8). Every command now accepts `--db-path`,
+  `--library`, `-o/--output`, `--format json|human`, `-q/--quiet` and
+  `-v/--verbose`, with the same meaning everywhere.
+  - `--human` (and `timeline_recap --narrative`) remain as shorthand for
+    `--format human`.
+  - `--quiet` leaves only the result on stdout and problems on stderr: no
+    summary, progress or info logs.
+  - `smart_export` gains `-o`.
+
 - **One entry point: `photos-cleaner`** (T1.6). `python3 photos_cleaner.py <command>`
   or `python3 -m photos_cleaner <command>` runs any command (`junk-finder` and
   `junk_finder` both work), and `--help` lists them all, with the mutating ones

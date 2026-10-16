@@ -48,13 +48,14 @@ CORE_DATA_EPOCH = datetime(2001, 1, 1, 0, 0, 0)
 CORE_DATA_UNIX_OFFSET = 978307200
 
 
-def setup_logging(verbose: bool = False) -> None:
+def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
     """Configure logging for the application.
 
     Args:
-        verbose: If True, set DEBUG level; otherwise INFO.
+        verbose: DEBUG level (wins over *quiet*).
+        quiet: WARNING level: errors and warnings only.
     """
-    level = logging.DEBUG if verbose else logging.INFO
+    level = logging.DEBUG if verbose else logging.WARNING if quiet else logging.INFO
     logging.basicConfig(
         level=level,
         format="%(levelname)s: %(message)s",
@@ -819,6 +820,44 @@ def _safe_float(val, default: float = 0.0) -> float:
 # ── Shared CLI boilerplate ───────────────────────────────────────────────────
 
 
+def add_common_args(
+    parser: argparse.ArgumentParser,
+    *,
+    default_format: str = "json",
+    human_aliases: tuple[str, ...] = ("--human",),
+) -> None:
+    """The flags every command shares (ROADMAP T1.8): same names, same meaning, everywhere.
+
+    ``--human`` (and any other alias, e.g. timeline_recap's ``--narrative``) is shorthand for
+    ``--format human``; all of them write ``args.format``.
+    """
+    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
+    parser.add_argument("--library", help="Path to Photos library")
+    parser.add_argument("-o", "--output", help="Write the JSON result to this file instead of stdout")
+    parser.add_argument(
+        "--format",
+        choices=["json", "human"],
+        default=default_format,
+        help=f"json (for programs and agents) or human (readable summary); default: {default_format}",
+    )
+    for alias in human_aliases:
+        parser.add_argument(
+            alias,
+            dest="format",
+            action="store_const",
+            const="human",
+            default=argparse.SUPPRESS,
+            help="Same as --format human",
+        )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Only the result on stdout and problems on stderr: no summary, progress or info logs",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
+
+
 def run_script(
     description: str,
     analyze_fn: Callable,
@@ -829,9 +868,8 @@ def run_script(
     """
     Shared CLI entry-point used by every analysis script.
 
-    Handles argparse setup (--db-path, --library, -o, --human),
-    invokes *analyze_fn*, and routes output through *format_fn* /
-    ``output_json``.
+    Handles the shared flags (add_common_args), invokes *analyze_fn*, and routes
+    output through *format_fn* / ``output_json``.
 
     Args:
         description: One-line argparse description.
@@ -848,17 +886,13 @@ def run_script(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog,
     )
-    parser.add_argument("--db-path", help="Path to Photos.sqlite database")
-    parser.add_argument("--library", help="Path to Photos library")
-    parser.add_argument("-o", "--output", help="Output JSON file")
-    parser.add_argument("--human", action="store_true", help="Output human-readable summary instead of JSON")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose/debug logging")
+    add_common_args(parser)
 
     if extra_args_fn:
         extra_args_fn(parser)
 
     args = parser.parse_args()
-    setup_logging(verbose=getattr(args, "verbose", False))
+    setup_logging(verbose=args.verbose, quiet=args.quiet)
     db_path = args.db_path or args.library
 
     try:
@@ -867,11 +901,11 @@ def run_script(
             result.setdefault("degraded", [])
 
         human = format_fn(result) + (format_degraded(result) if isinstance(result, dict) else "")
-        if args.human:
+        if args.format == "human":
             print(human)
         else:
             output_json(result, args.output)
-            if not args.output:
+            if not args.output and not args.quiet:
                 print("\n" + human, file=sys.stderr)
 
         return ExitCode.OK
