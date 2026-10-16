@@ -405,10 +405,26 @@ def render_markdown(data: Any, title: str) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+# Spreadsheets run a cell starting with one of these as a formula (CSV injection). Album titles,
+# filenames and names come from the library, i.e. from anyone who shared a photo, so text cells get
+# a leading apostrophe. Real numbers are left alone; JSON and Markdown are unaffected.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_cell(value: Any) -> str:
+    text = _cell(value)
+    if isinstance(value, str) and text.startswith(_FORMULA_PREFIXES):
+        return "'" + text
+    return text
+
+
 def render_csv(data: Any) -> str:
     """Every list of objects in the result, at any depth, as one table with a `section` column.
 
-    Top-level summary values aren't rows, so CSV leaves them out (use json or md for those).
+    ``section`` always holds the row's dotted source path; a row's own ``section`` field (as in
+    ``degraded`` entries) is kept as ``entry_section``. Text that a spreadsheet would run as a
+    formula is prefixed with ``'``. Top-level summary values aren't rows, so CSV leaves them out
+    (use json or md for those).
     """
     import csv
     import io
@@ -417,7 +433,10 @@ def render_csv(data: Any) -> str:
 
     def collect(value: Any, path: str) -> None:
         if _is_table(value):
-            rows.extend({"section": path, **row} for row in value)
+            rows.extend(
+                {"section": path, **{("entry_section" if k == "section" else k): v for k, v in row.items()}}
+                for row in value
+            )
         elif isinstance(value, dict):
             for key, item in value.items():
                 collect(item, f"{path}.{key}" if path else str(key))
@@ -427,7 +446,7 @@ def render_csv(data: Any) -> str:
     writer = csv.writer(buffer, lineterminator="\n")
     columns = _columns(rows) if rows else ["section"]
     writer.writerow(columns)
-    writer.writerows([_cell(row.get(c)) for c in columns] for row in rows)
+    writer.writerows([_csv_cell(row.get(c)) for c in columns] for row in rows)
     return buffer.getvalue()
 
 

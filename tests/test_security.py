@@ -8,6 +8,7 @@ every CLI argument an agent passes in. These tests pin down the three places
 that input meets an interpreter: AppleScript, the filesystem, and SQL.
 """
 
+import csv
 import io
 import json
 import logging
@@ -600,3 +601,48 @@ class TestExportConfirmation:
         with pytest.raises(SystemExit) as exc:
             run_main(module, [*argv, "--yes"], capsys)
         assert exc.value.code == ExitCode.USAGE
+
+
+# ── CSV formula injection (T2.23 review) ─────────────────────────────────────
+
+
+class TestCsvInjection:
+    """Library strings are attacker-controlled; a spreadsheet must show them, never run them."""
+
+    HOSTILE = ("=1+1", '=HYPERLINK("http://evil","x")', "+cmd|' /C calc'!A0", "-2+3", "@SUM(A1:A9)", "\tx", "\rx")
+
+    @pytest.mark.parametrize("label", HOSTILE)
+    def test_formula_text_is_neutralized(self, label):
+        from _common import render_csv
+
+        rows = list(csv.DictReader(io.StringIO(render_csv({"albums": [{"title": label, "count": 3}]}))))
+        assert rows[0]["title"] == "'" + label
+        assert rows[0]["count"] == "3"
+
+    def test_numbers_and_other_formats_are_untouched(self):
+        from _common import render_csv, render_markdown
+
+        data = {"places": [{"lat": -33.86, "delta": -5, "name": "=1+1"}]}
+        row = next(csv.DictReader(io.StringIO(render_csv(data))))
+        assert (row["lat"], row["delta"]) == ("-33.86", "-5")
+        assert "| -33.86 | -5 | =1+1 |" in render_markdown(data, "t")  # Markdown isn't executed
+
+    def test_hostile_album_title_end_to_end(self, db_file, tmp_path):
+        conn = sqlite3.connect(db_file)
+        conn.execute("""UPDATE ZGENERICALBUM SET ZTITLE = '=HYPERLINK("http://evil","x")'""")
+        conn.commit()
+        conn.close()
+        result = run_cli("album_auditor", "--db-path", str(db_file), "--format", "csv", "-q")
+        assert result.returncode == 0
+        titles = {row.get("title") for row in csv.DictReader(io.StringIO(result.stdout)) if row.get("title")}
+        assert titles and all(t.startswith("'=") for t in titles)
+
+
+def test_csv_section_column_is_always_the_source_path():
+    """A row's own `section` field (degraded entries) must not overwrite the path column."""
+    from _common import render_csv
+
+    data = {"degraded": [{"section": "burst_leftovers", "reason": "missing column(s): ZASSET.ZAVALANCHEKIND"}]}
+    row = next(csv.DictReader(io.StringIO(render_csv(data))))
+    assert row["section"] == "degraded"
+    assert row["entry_section"] == "burst_leftovers"

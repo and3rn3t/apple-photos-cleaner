@@ -20,6 +20,10 @@ release is cut.
     become JSON cells.
   - Both honor `-o`. They contain the same data as JSON, so the privacy
     guidance applies.
+  - CSV text that a spreadsheet would run as a formula (`=`, `+`, `-`, `@`,
+    tab, CR) is prefixed with `'`, because album titles and filenames come from
+    whoever shared the photo. A row's own `section` field is kept as
+    `entry_section`, so `section` is always the row's source path.
 
 - **Consistent flags** (T1.8). Every command now accepts `--db-path`,
   `--library`, `-o/--output`, `--format json|human`, `-q/--quiet` and
