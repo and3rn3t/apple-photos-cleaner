@@ -35,6 +35,14 @@ make install
 
 Every script lives in `scripts/` and outputs **JSON** by default (for piping / AI consumption). Add `--human` for readable terminal output.
 
+One entry point runs them all, with hyphens or underscores:
+
+```bash
+python3 photos_cleaner.py --help                 # list every command
+python3 photos_cleaner.py junk-finder --human    # same as python3 scripts/junk_finder.py --human
+pipx install . && photos-cleaner doctor          # optional: install the `photos-cleaner` command
+```
+
 | Script | Purpose |
 |---|---|
 | `library_analysis.py` | Big-picture stats: counts, storage, date ranges, quality distribution |
@@ -95,9 +103,10 @@ make clean       # Remove cache/build artifacts
 ### Project structure
 
 ```
-scripts/          # All analysis scripts + shared _common.py and _schema.py (schema registry)
+photos_cleaner.py # Dispatcher: `python3 photos_cleaner.py <command>` (or `photos-cleaner` once installed)
+scripts/          # All analysis scripts + shared _common.py and _schema.py (schema registry); schema-fingerprints.json
 tests/            # Pytest test suite
-references/       # commands/<name>.md (flags, output, examples), workflows.md, database schema, schema fingerprints
+references/       # commands/<name>.md (flags, output, examples), workflows.md, database schema
 docs/             # Threat model
 SKILL.md          # AI skill router: when to use each command, safety and privacy rules (≤ 250 lines)
 pyproject.toml    # Tool config (pytest, ruff, mypy)

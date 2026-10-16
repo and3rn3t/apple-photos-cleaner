@@ -40,7 +40,8 @@ REQUIRED_COLUMNS: tuple[str, ...] = ()
 OPTIONAL_COLUMNS: dict[str, tuple[str, ...]] = {}
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-FINGERPRINTS_PATH = SCRIPTS_DIR.parent / "references" / "schema-fingerprints.json"
+# Next to the scripts so it ships with an installed copy (package data), not only in the repo.
+FINGERPRINTS_PATH = SCRIPTS_DIR / "schema-fingerprints.json"
 MIN_PYTHON = _bootstrap.MIN_PYTHON
 SCHEMA_ISSUE_URL = "https://github.com/and3rn3t/apple-photos-cleaner/issues/new"
 # Below this share of originals on disk, "Optimize Mac Storage" is probably on.
