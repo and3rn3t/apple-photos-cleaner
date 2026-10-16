@@ -8,6 +8,13 @@ release is cut.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-15
+
+"One CLI": a single `photos-cleaner` entry point, the same flags on every
+command, Markdown and CSV output, and a common envelope on every result. Also
+`timeline_recap` on macOS 26 goes from 9.0 s to 0.5 s on a real 15.7k-photo
+library.
+
 ### Fixed
 
 - **`timeline_recap` on macOS 26 is fast again.** Each event reopened and
@@ -323,7 +330,8 @@ repository, so its exact contents aren't recorded. It sits between 1.0.0 and
   preview-first.
 - Schema detection for the old and new (`ZPERSONFORFACE`/`ZASSETFORFACE`) face tables.
 
-[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/and3rn3t/apple-photos-cleaner/compare/v1.0.3...v1.1.0
