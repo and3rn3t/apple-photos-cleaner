@@ -30,11 +30,11 @@ from _common import (
     build_identifier_lists,
     coredata_to_local,
     display_name,
+    emit_result,
     format_size,
     handle_cli_error,
     has_timezone_offset,
     original_filename_sql,
-    output_json,
     plan_token,
     positive_int,
     require_uuid_support,
@@ -508,7 +508,7 @@ def emit_preview(data: dict[str, Any], args: argparse.Namespace) -> None:
     if args.format == "human":
         print(format_summary(data))
         return
-    output_json(data, args.output)
+    emit_result(data, args)
     if not args.output and not args.quiet:
         print("\n" + format_summary(data), file=sys.stderr)
 
@@ -600,7 +600,7 @@ Categories:
             if args.format == "human":
                 print(message)  # the result itself, so --quiet doesn't drop it
             else:
-                output_json(data, args.output)
+                emit_result(data, args)
                 if not args.quiet:
                     print(message, file=sys.stderr)
             return ExitCode.OK
@@ -629,7 +629,7 @@ Categories:
         if args.format == "human":
             print(format_summary(result))
         else:
-            output_json(result, args.output)
+            emit_result(result, args)
 
         return 0
 

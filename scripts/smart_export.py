@@ -28,13 +28,13 @@ from _common import (
     build_identifier_lists,
     coredata_to_local,
     detect_face_schema,
+    emit_result,
     escape_applescript,
     format_size,
     handle_cli_error,
     has_timezone_offset,
     local_datetime_sql,
     original_filename_sql,
-    output_json,
     plan_token,
     require_uuid_support,
     sanitize_folder_name,
@@ -469,8 +469,8 @@ match the current plan, or nothing is written.
         plan["next_command"] = export_command(args, token)
 
         if args.plan_only or args.confirm != token:
-            if args.format == "json":
-                output_json(plan, args.output)
+            if args.format != "human":
+                emit_result(plan, args)
             else:
                 print(format_plan(plan))
             if args.plan_only:
@@ -485,7 +485,7 @@ match the current plan, or nothing is written.
 
         # Progress goes to stderr in JSON mode so stdout stays one JSON document.
         # --quiet drops progress lines; the plan (human) or result (json) is still the output.
-        progress = io.StringIO() if args.quiet else sys.stderr if args.format == "json" else sys.stdout
+        progress = io.StringIO() if args.quiet else sys.stderr if args.format != "human" else sys.stdout
         if args.format == "human":
             print(format_plan(plan))
         print(f"Exporting to: {args.output_dir}\n", file=progress)
@@ -514,8 +514,8 @@ match the current plan, or nothing is written.
                 "or their filename no longer matches.",
                 file=sys.stderr,
             )
-        if args.format == "json":
-            output_json(
+        if args.format != "human":
+            emit_result(
                 {
                     "degraded": plan["degraded"],
                     "output_dir": args.output_dir,
@@ -523,7 +523,7 @@ match the current plan, or nothing is written.
                     "skipped": total_skipped,
                     "confirm_token": token,
                 },
-                args.output,
+                args,
             )
 
         return ExitCode.OK

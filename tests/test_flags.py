@@ -47,7 +47,7 @@ def test_shared_flags(command):
     assert expected <= options, f"{command} lacks {sorted(expected - options)}"
 
     fmt = action(parser, "--format")
-    assert list(fmt.choices) == ["json", "human"]
+    assert list(fmt.choices) == ["json", "human", "md", "csv"]
     assert fmt.default == ("human" if command in HUMAN_BY_DEFAULT else "json")
     # --human is shorthand for --format human, stored in the same place
     human = action(parser, "--human")

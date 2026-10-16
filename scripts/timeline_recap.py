@@ -15,12 +15,12 @@ from _common import (
     add_common_args,
     coredata_to_local,
     detect_face_schema,
+    emit_result,
     format_date_range,
     format_degraded,
     handle_cli_error,
     has_timezone_offset,
     local_datetime_sql,
-    output_json,
     setup_logging,
     tz_offset_sql,
 )
@@ -399,7 +399,7 @@ Examples:
             else:
                 print(output_text)
         else:
-            output_json(timeline, args.output)
+            emit_result(timeline, args)
 
             if not args.output and not args.quiet:
                 print("\n" + (format_narrative(timeline) + format_degraded(timeline)), file=sys.stderr)

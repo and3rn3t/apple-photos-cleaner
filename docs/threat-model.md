@@ -90,6 +90,7 @@ fixed. Exporting into a directory only the user can write is the mitigation.
 
 | Threat | Mitigation |
 | --- | --- |
+| A library string (album title, filename, name) such as `=HYPERLINK(...)` runs as a formula when a `--format csv` report is opened in a spreadsheet | CSV text cells starting with `= + - @`, tab or CR are prefixed with `'`; real numbers are untouched, and JSON/Markdown aren't affected (`_csv_cell`; `TestCsvInjection`) |
 | Data leaves the machine | No network code anywhere in the core. Any network feature must be opt-in and listed in SKILL.md's Privacy section |
 | Sensitive results (home location, faces) end up in agent transcripts | Aggregate by default; see the roadmap's privacy-proportional principle and T2.10 |
 | Personal names in shipped docs | `tests/test_no_personal_refs.py` |
