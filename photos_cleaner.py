@@ -11,6 +11,10 @@ Commands are the scripts in scripts/ (underscores or hyphens both work:
 are unchanged, and `python3 scripts/<command>.py` keeps working.
 """
 
+# Annotations below use 3.10 syntax; deferring them keeps this file runnable on older Pythons
+# long enough for _bootstrap to print the upgrade instructions.
+from __future__ import annotations
+
 import difflib
 import importlib
 import importlib.util

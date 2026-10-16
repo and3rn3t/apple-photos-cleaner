@@ -99,3 +99,16 @@ def test_commands_dir_requires_our_scripts(tmp_path, monkeypatch):
     monkeypatch.setattr(photos_cleaner.importlib.util, "find_spec", lambda name: None)
     with pytest.raises(SystemExit, match="can't find its commands"):
         photos_cleaner.commands_dir()
+
+
+def test_dispatcher_defers_annotations_for_old_pythons():
+    """On 3.9, `list[str] | None` in a signature raises at def time, before _bootstrap can explain.
+
+    CI has no 3.9; this pins the guard. (Verified by hand on 3.9.25: TypeError without it,
+    the upgrade message with it.)
+    """
+    import ast
+
+    tree = ast.parse(DISPATCHER.read_text(encoding="utf-8"))
+    imports = [node for node in tree.body if isinstance(node, ast.ImportFrom) and node.module == "__future__"]
+    assert any(alias.name == "annotations" for node in imports for alias in node.names)
