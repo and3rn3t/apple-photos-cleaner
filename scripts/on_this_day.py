@@ -25,7 +25,7 @@ from _common import (
     run_script,
     tz_offset_sql,
 )
-from _scenes import SEARCH_INDEX, scene_source, search_index_available, top_labels_for_assets
+from _scenes import SEARCH_INDEX, IndexLabels, scene_source, search_index_available
 from _schema import FACES, FILE_SIZE, ORIGINAL_FILENAME, QUALITY_SCORES, SCENES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
@@ -85,6 +85,7 @@ def on_this_day(
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
         # Scene names come from ZSCENECLASSIFICATION or, on macOS 26, Photos' search index (see _scenes).
         scenes_from = scene_source(conn)
+        index_labels = IndexLabels(conn)  # loads lazily, once, only if the index is the source
         has_scenes = scenes_from is not None
         if scenes_from is None:
             degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
@@ -207,7 +208,7 @@ def on_this_day(
             # Get scenes (None when this library has no scene data)
             scenes: list[dict[str, Any]] | None = [] if has_scenes else None
             if photo_ids and scenes_from == SEARCH_INDEX:
-                scenes = top_labels_for_assets(conn, photo_ids)
+                scenes = index_labels.top(photo_ids)
             elif photo_ids and has_scenes:
                 cursor.execute(
                     f"""

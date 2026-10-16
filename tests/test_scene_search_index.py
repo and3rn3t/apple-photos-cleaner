@@ -235,3 +235,23 @@ class TestReviewFixes:
         _, result = run("scene_search", "--library", str(make_library(tmp_path)), "--search", "outdoor", "--top", "1")
         assert [r["id"] for r in result["results"]] == [2]
         assert result["related_scenes"] == []
+
+
+def test_timeline_opens_the_index_once_for_all_events(tmp_path):
+    """Reopening and querying the index per event made a real 15.7k-photo timeline take ~9 s."""
+    import _scenes
+
+    lib = make_library(tmp_path)
+    opened = []
+    real_init = _scenes.SearchIndex.__init__
+
+    def counting_init(self, db_path):
+        opened.append(db_path)
+        real_init(self, db_path)
+
+    with patch.object(_scenes.SearchIndex, "__init__", counting_init):
+        _, timeline = run("timeline_recap", "--library", str(lib))
+    events = sum(len(day["events"]) for day in timeline["timeline"])
+    assert events > 2, "fixture should span several events"
+    # One open to choose the source (scene_source) and one to load every label; none per event.
+    assert len(opened) <= 2
