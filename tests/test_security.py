@@ -615,7 +615,7 @@ class TestCsvInjection:
     def test_formula_text_is_neutralized(self, label):
         from _common import render_csv
 
-        rows = list(csv.DictReader(io.StringIO(render_csv({"albums": [{"title": label, "count": 3}]}))))
+        rows = list(csv.DictReader(io.StringIO(render_csv({"albums": [{"title": label, "count": 3}]}), newline="")))
         assert rows[0]["title"] == "'" + label
         assert rows[0]["count"] == "3"
 

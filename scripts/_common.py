@@ -443,7 +443,9 @@ def render_csv(data: Any) -> str:
 
     collect(data, "")
     buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\n")
+    # RFC 4180 line endings: the writer quotes any field containing a character of the line
+    # terminator, so "\r\n" makes embedded CR and LF safe on every Python version.
+    writer = csv.writer(buffer, lineterminator="\r\n")
     columns = _columns(rows) if rows else ["section"]
     writer.writerow(columns)
     writer.writerows([_csv_cell(row.get(c)) for c in columns] for row in rows)

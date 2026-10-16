@@ -52,7 +52,12 @@ class TestRenderers:
         assert rows[2]["k"] == "1"
 
     def test_csv_with_no_rows_still_has_a_header(self):
-        assert render_csv({"summary": {"count": 0}}) == "section\n"
+        assert render_csv({"summary": {"count": 0}}) == "section\r\n"
+
+    def test_line_breaks_inside_values_stay_inside_their_cell(self):
+        text = render_csv({"rows": [{"a": "one\rtwo", "b": "three\nfour"}, {"a": "x", "b": "y"}]})
+        rows = list(csv.DictReader(io.StringIO(text, newline="")))
+        assert [(r["a"], r["b"]) for r in rows] == [("one\rtwo", "three\nfour"), ("x", "y")]
 
 
 @pytest.mark.parametrize("script", SCRIPTS)
