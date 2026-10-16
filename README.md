@@ -40,6 +40,7 @@ One entry point runs them all, with hyphens or underscores:
 ```bash
 python3 photos_cleaner.py --help                 # list every command
 python3 photos_cleaner.py junk-finder --human    # same as python3 scripts/junk_finder.py --human
+python3 photos_cleaner.py junk-finder --format csv -o junk.csv   # or --format md for a Markdown report
 pipx install . && photos-cleaner doctor          # optional: install the `photos-cleaner` command
 ```
 

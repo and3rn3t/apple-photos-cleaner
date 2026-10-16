@@ -28,10 +28,10 @@ from _common import (
     PhotosDB,
     add_common_args,
     connect_db,
+    emit_result,
     find_photos_db,
     format_size,
     handle_cli_error,
-    output_json,
     setup_logging,
 )
 from _schema import OLDEST_SUPPORTED_MODEL_VERSION, SchemaRegistry, get_schema, macos_for_model_version
@@ -430,8 +430,8 @@ Examples:
             sys.stdout.write(schema_dump(path))
             return ExitCode.OK
         report = diagnose(path, check_automation_flag=args.check_automation)
-        if args.format == "json":
-            output_json(report, args.output)
+        if args.format != "human":
+            emit_result(report, args)
         else:
             print(format_report(report))
         return exit_code(report)

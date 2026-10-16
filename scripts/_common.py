@@ -343,6 +343,112 @@ def output_json(data: Any, output_file: str | None = None, pretty: bool = True) 
         print(json_str)
 
 
+# ── Markdown / CSV renderers (T2.23) ─────────────────────────────────────────
+# Generic over the JSON result, so every command supports them without its own formatter.
+
+STRUCTURED_FORMATS = ("json", "md", "csv")
+
+
+def _is_table(value: Any) -> bool:
+    return isinstance(value, list) and bool(value) and all(isinstance(item, dict) for item in value)
+
+
+def _cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value)
+
+
+def _columns(rows: list[dict]) -> list[str]:
+    columns: list[str] = []
+    for row in rows:
+        columns.extend(key for key in row if key not in columns)
+    return columns
+
+
+def render_markdown(data: Any, title: str) -> str:
+    """Scalars as a bullet list, nested objects as sections, lists of objects as tables."""
+    lines = [f"# {title}", ""]
+
+    def md_cell(value: Any) -> str:
+        return _cell(value).replace("|", "\\|").replace("\n", " ")
+
+    def section(value: dict, level: int) -> None:
+        scalars = {k: v for k, v in value.items() if not isinstance(v, (dict, list))}
+        for key, item in scalars.items():
+            lines.append(f"- **{key}**: {md_cell(item)}")
+        if scalars:
+            lines.append("")
+        for key, item in value.items():
+            if key in scalars:
+                continue
+            heading = "#" * min(level, 6)
+            if _is_table(item):
+                columns = _columns(item)
+                lines.extend([f"{heading} {key}", "", "| " + " | ".join(columns) + " |"])
+                lines.append("|" + "---|" * len(columns))
+                lines.extend("| " + " | ".join(md_cell(row.get(c)) for c in columns) + " |" for row in item)
+                lines.append("")
+            elif isinstance(item, dict):
+                lines.extend([f"{heading} {key}", ""])
+                section(item, level + 1)
+            elif isinstance(item, list):
+                lines.append(f"- **{key}**: {', '.join(md_cell(v) for v in item) if item else '(none)'}")
+                lines.append("")
+
+    if isinstance(data, dict):
+        section(data, 2)
+    else:
+        lines.append(md_cell(data))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_csv(data: Any) -> str:
+    """Every list of objects in the result, at any depth, as one table with a `section` column.
+
+    Top-level summary values aren't rows, so CSV leaves them out (use json or md for those).
+    """
+    import csv
+    import io
+
+    rows: list[dict] = []
+
+    def collect(value: Any, path: str) -> None:
+        if _is_table(value):
+            rows.extend({"section": path, **row} for row in value)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                collect(item, f"{path}.{key}" if path else str(key))
+
+    collect(data, "")
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    columns = _columns(rows) if rows else ["section"]
+    writer.writerow(columns)
+    writer.writerows([_cell(row.get(c)) for c in columns] for row in rows)
+    return buffer.getvalue()
+
+
+def emit_result(data: Any, args: argparse.Namespace) -> None:
+    """Write a result as args.format (json, md or csv) to args.output, or stdout."""
+    title = os.path.basename(sys.argv[0]).removesuffix(".py") or "result"
+    if args.format == "md":
+        text = render_markdown(data, title)
+    elif args.format == "csv":
+        text = render_csv(data)
+    else:
+        output_json(data, args.output)
+        return
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text)
+        logger.info("Output written to: %s", args.output)
+    else:
+        sys.stdout.write(text)
+
+
 def get_asset_kind_name(kind: int) -> str:
     """
     Convert ZKIND value to human-readable name.
@@ -836,9 +942,12 @@ def add_common_args(
     parser.add_argument("-o", "--output", help="Write the JSON result to this file instead of stdout")
     parser.add_argument(
         "--format",
-        choices=["json", "human"],
+        choices=["json", "human", "md", "csv"],
         default=default_format,
-        help=f"json (for programs and agents) or human (readable summary); default: {default_format}",
+        help=(
+            "json (programs, agents), human (readable summary), md (Markdown report) or csv "
+            f"(every list in the result as rows); default: {default_format}"
+        ),
     )
     for alias in human_aliases:
         parser.add_argument(
@@ -904,7 +1013,7 @@ def run_script(
         if args.format == "human":
             print(human)
         else:
-            output_json(result, args.output)
+            emit_result(result, args)
             if not args.output and not args.quiet:
                 print("\n" + human, file=sys.stderr)
 
