@@ -24,7 +24,7 @@ from _common import (
     setup_logging,
     tz_offset_sql,
 )
-from _scenes import SEARCH_INDEX, scene_source, search_index_available, top_labels_for_assets
+from _scenes import SEARCH_INDEX, IndexLabels, scene_source, search_index_available
 from _schema import FACES, SCENES, Degradation, get_schema
 
 # Schema contract (T1.4): see _schema. Missing required → exit 5; missing optional → `degraded`.
@@ -71,6 +71,7 @@ def generate_timeline(
         has_faces = degraded.check("people", *OPTIONAL_COLUMNS["people"])
         # Scene names come from ZSCENECLASSIFICATION or, on macOS 26, Photos' search index (see _scenes).
         scenes_from = scene_source(conn)
+        index_labels = IndexLabels(conn)  # filled in bulk below, only if the index is the source
         has_scenes = scenes_from is not None
         if scenes_from is None:
             degraded.check("scenes", *OPTIONAL_COLUMNS["scenes"])
@@ -174,6 +175,8 @@ def generate_timeline(
             events.append(current_event)
 
         # Enrich events with additional data
+        if scenes_from == SEARCH_INDEX:  # one batch for every photo in the timeline
+            index_labels.preload(p["id"] for event in events for p in event["photos"])
         for event in events:
             photo_ids = [p["id"] for p in event["photos"]]
             event["photo_count"] = len(photo_ids)
@@ -202,7 +205,7 @@ def generate_timeline(
 
             # Get scene classifications (None when this library has none)
             if photo_ids and scenes_from == SEARCH_INDEX:
-                event["scenes"] = top_labels_for_assets(conn, photo_ids)
+                event["scenes"] = index_labels.top(photo_ids)
             elif photo_ids and has_scenes:
                 cursor.execute(
                     f"""
