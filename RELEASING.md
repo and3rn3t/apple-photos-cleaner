@@ -55,9 +55,17 @@ Raising the Python floor is called out in the CHANGELOG even when it's a patch.
      git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z
      ```
 
-   - Release Drafter keeps a draft named "Next release (draft)" up to date. It doesn't guess the
-     version: publish it with the tag and title, using the CHANGELOG section as its notes, e.g.
-     `gh release edit <draft-tag-or-id> --tag vX.Y.Z --title "vX.Y.Z — <theme>" --notes-file notes.md --draft=false --latest`.
+   - Release Drafter keeps a draft named "Next release (draft)" up to date. It has no tag (it doesn't
+     guess versions), so publish it by **ID** through the API, with the CHANGELOG section as its notes:
+
+     ```bash
+     id=$(gh api repos/and3rn3t/apple-photos-cleaner/releases --jq '[.[] | select(.draft)][0].id')
+     gh api -X PATCH "repos/and3rn3t/apple-photos-cleaner/releases/$id" \
+       -f tag_name=vX.Y.Z -f name="vX.Y.Z — <theme>" -F body=@notes.md \
+       -F draft=false -f make_latest=true
+     ```
+
+     (`gh release edit` takes a tag name, not an ID, so it can't address an untagged draft.)
 
 ## If a publish goes wrong
 
