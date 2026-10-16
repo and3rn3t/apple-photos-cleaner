@@ -4,7 +4,7 @@ Where `apple-photos-cleaner` goes after 1.0. It starts with maintenance and buil
 moonshots. Each tier assumes the tiers below it are mostly done. Pick work from the lowest tier
 that still has open items unless something higher is blocking a release.
 
-> Status as of 2026-10-15: **v1.3.0** (scene search on macOS 26) ready to ship; v1.2.0 on ClawHub. 21
+> Status as of 2026-10-15: **v1.4.0** (One CLI) ready to ship; v1.3.0 on ClawHub. 21
 > commands (incl. `doctor`), stdlib-only, read-only analysis + two token-confirmed mutating commands.
 > ~95% coverage, CI on macOS × Python 3.10 / 3.14 / 3.15. Verified against a real macOS 26 library.
 > ✅ marks shipped items.
@@ -113,9 +113,9 @@ detection is ad-hoc (`detect_face_schema`, per-script `PRAGMA table_info` checks
 
 | ID | Item | Size | Done when |
 | --- | --- | --- | --- |
-| T1.6 ⭐ | **Unified entry point.** `photos-cleaner <command>` (and `python3 -m photos_cleaner`) dispatching to the existing scripts. Scripts keep working standalone | M | `photos-cleaner --help` lists all commands; SKILL.md examples use it |
+| T1.6 ⭐ ✅ | **Unified entry point.** `photos-cleaner <command>` (and `python3 -m photos_cleaner`) dispatching to the existing scripts. Scripts keep working standalone | M | `photos-cleaner --help` lists all commands; SKILL.md examples use it |
 | T1.7 | **Versioned JSON output schema.** Every result gets `{"schema_version", "command", "generated_at", "library", "data", "warnings", "degraded"}`. Publish JSON Schema files in `schemas/` | L | Schemas validated in tests; changing a field shape fails CI |
-| T1.8 | **Consistent flags.** `--db-path`, `--library`, `--output`, `--format`, `--year`, `--start-date/--end-date`, `--limit`, `--quiet`, `--verbose` everywhere they make sense | M | A test walks every parser and asserts the shared flag set |
+| T1.8 ✅ | **Consistent flags.** `--db-path`, `--library`, `--output`, `--format`, `--year`, `--start-date/--end-date`, `--limit`, `--quiet`, `--verbose` everywhere they make sense | M | A test walks every parser and asserts the shared flag set |
 | T1.9 ✅ | **Exit codes.** 0 ok, 2 usage, 3 DB not found, 4 permission denied, 5 schema unsupported, 10 user aborted, 11 confirmation required | S | Documented and tested; agents can branch on them |
 | T1.10 ⭐ ✅ | **`doctor` command.** Checks Python, DB location, Full Disk Access, Automation permission, schema fingerprint, library size, iCloud "Optimize Storage" state, optional helper presence. Prints concrete fixes | M | First thing SKILL.md tells an agent to run when anything fails |
 | T1.11 | **Config file.** `~/.config/photos-cleaner/config.toml` for defaults (thresholds, hemisphere, protected albums, redaction level). CLI flags override | S | `tomllib` on 3.11+, minimal fallback parser for older Pythons |
@@ -203,7 +203,7 @@ Deepen what's already there before going wide.
 
 | ID | Item | Size | Done when |
 | --- | --- | --- | --- |
-| T2.23 | **Markdown + CSV output.** `--format md\|csv\|json\|human` | S | Every command supports it |
+| T2.23 ✅ | **Markdown + CSV output.** `--format md\|csv\|json\|human` | S | Every command supports it |
 | T2.24 | **Thumbnails in reports.** Resolve derivative paths inside the library bundle (read-only) so reports show the real photo | M | `best_photos --format html` shows real images |
 | T2.25 | **GPX / GeoJSON export.** Location clusters and trips as GPX/GeoJSON for any map app | S | Opens in Apple Maps / Google Earth; home redacted by default |
 | T2.26 | **Localization.** Human output and narratives translatable; date/number formats follow locale | M | gettext-style catalogs; one non-English locale shipped as proof |
@@ -366,10 +366,11 @@ Semver: a new JSON field is a minor; a removed or renamed one is a major.
 | **1.1** ✅ | Solid ground | T1.1, T1.2, T1.4, T1.9, T1.10, T1.19, T1.20, T1.23, plus T0.9, T0.16 |
 | **1.2** ✅ | Real-library fixes | Screen recordings split from screenshots (#37, part of T2.5), original filenames (#38) |
 | **1.3** ✅ | Scene search on macOS 26 | Labels from Photos' search index (#35) |
-| **1.4** | One CLI | T1.6–T1.8, T1.14–T1.16, T1.18, T1.25, T2.23, D.1 |
-| **1.5** | Safe cleanup | T2.1–T2.4, T2.6–T2.8, T1.21, T3.1 |
-| **1.6** | Richer insight | T2.9–T2.17, T3.15, T3.17, T3.18 |
-| **1.7** | Media & sources | T2.18–T2.22, T2.25, D.2, D.3 |
+| **1.4** ✅ | One CLI | T1.6, T1.8, T2.23, T1.7 part 1 (result envelope), timeline_recap 9.0 s → 0.5 s |
+| **1.5** | One CLI, continued | T1.7 part 2 (published JSON Schemas), T1.14, T1.15, T1.18, T1.25, D.1 (T1.16 deferred ⏸) |
+| **1.6** | Safe cleanup | T2.1–T2.4, T2.6–T2.8, T1.21, T3.1 |
+| **1.7** | Richer insight | T2.9–T2.17, T3.15, T3.17, T3.18 |
+| **1.8** | Media & sources | T2.18–T2.22, T2.25, D.2, D.3 |
 | **2.0** | Reports & recaps | T1.7 schema v1 frozen, T1.12, T3.2–T3.7, T3.16, T2.24 |
 | **2.x** | Library tooling | T3.8–T3.14, T3.19–T3.24, T1.17 |
 | **3.0** | Native intelligence | T4.1–T4.4, T4.6, T4.7, T4.8 |
