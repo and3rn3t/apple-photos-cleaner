@@ -1,6 +1,12 @@
 # Apple Photos Cleaner
 
-Analyze, audit, and clean up your Apple Photos library by querying its SQLite database directly.
+**Analyze, audit, and clean up your Apple Photos library by querying its SQLite database directly.**
+
+[![CI](https://github.com/and3rn3t/apple-photos-cleaner/actions/workflows/ci.yml/badge.svg)](https://github.com/and3rn3t/apple-photos-cleaner/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+
+![photos-cleaner --help listing every command](docs/screenshot.png)
 
 Goes beyond what Photos.app offers: intelligent junk detection, detailed storage analysis, duplicate finding with quality scoring, timeline recaps, people analytics, location mapping, and more.
 
@@ -14,13 +20,25 @@ Goes beyond what Photos.app offers: intelligent junk detection, detailed storage
 > shared-library contributors. Everything stays on your Mac — nothing is uploaded — but be careful
 > where you save or share the JSON output. See [Safety & Privacy](#safety--privacy).
 
-## Requirements
+## Features
+
+- **Junk finder** — old screenshots, screen recordings, low-quality shots and burst leftovers, with savings estimates
+- **Duplicates & look-alikes** — Apple's own duplicate detection plus timestamp/dimension matching, and visually similar photos
+- **Storage analysis** — by year, type and format, growth trends, largest items, iCloud local-only items
+- **Best photos** — highest-quality shots, hidden gems you never favorited, best per person and per season
+- **Timeline, people & places** — narrative recaps, on-this-day, who appears together, trips and location clusters
+- **Safe cleanup** — read-only analysis; the two mutating commands need a confirmation token from their own preview
+- **JSON by default** — pipe into other tools or an AI agent; `--human` for readable output, CSV/Markdown export
+
+## Getting started
+
+### Requirements
 
 - **macOS** (accesses the Photos SQLite database)
 - **Python 3.10+** (uses stdlib only — no external runtime dependencies). Stock macOS
   `/usr/bin/python3` is 3.9 and too old; install a current one with `brew install python`
 
-## Setup
+### Setup
 
 ```bash
 # Clone the repo
@@ -89,6 +107,12 @@ python3 scripts/scene_search.py --search beach --human
 # Preview cleanup (dry run by default)
 python3 scripts/cleanup_executor.py --category old_screenshots --human
 ```
+
+## Tech stack
+
+- Python 3.10+ standard library only (`sqlite3`, `argparse`) — no runtime dependencies
+- AppleScript (via `osascript`) for the two mutating commands
+- pytest, ruff and mypy for development
 
 ## Development
 
@@ -169,4 +193,4 @@ when you only want to read the result.
 
 ## License
 
-MIT
+[MIT](LICENSE)
